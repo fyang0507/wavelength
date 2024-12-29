@@ -7,3 +7,5 @@ Wire the subscriptions
 - The Batch newsletter
 - a16z, sequoia website
 - deeplearning course
+- Youtube
+- wechat 公众号？
