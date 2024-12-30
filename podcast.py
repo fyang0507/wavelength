@@ -1,3 +1,4 @@
+"""Ref: https://developer.apple.com/library/archive/documentation/AudioVideo/Conceptual/iTuneSearchAPI/index.html"""
 import requests
 import xml.etree.ElementTree as ET
 
@@ -29,6 +30,9 @@ def get_latest_episode(podcast_name):
         channel = root.find('channel')
         latest_item = channel.find('item')
 
+        # for testing
+        # return latest_item
+    
         for child in latest_item:
             if 'title' in child.tag:
                 title = child.text
