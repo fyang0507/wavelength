@@ -3,12 +3,15 @@ Ever drown in countless notification and lose track of what's most interesting? 
 
 Wire the subscriptions
 - ~Apple Podcast~ (extend: use universal podcast search API)
-- TLDR, AlphaSignal, Snack newsletter
-- The Batch newsletter
-- a16z, sequoia website
-- deeplearning course
 - ~Youtube~
+- TLDR, AlphaSignal, Snack newsletter
+- [pending verification] The Batch newsletter
+- [pending verification] a16z, sequoia website
+- [pending verification] deeplearning course
+
 - wechat 公众号？
+    - https://github.com/cooderl/wewe-rss
+- substack
 
 
 - consider add image
