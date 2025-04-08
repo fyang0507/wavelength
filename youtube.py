@@ -1,7 +1,8 @@
 """Ref: https://developers.google.com/youtube/v3/docs/"""
 from googleapiclient.discovery import build
 from datetime import datetime
-import tomllib
+from dotenv import load_dotenv
+import os
 
 def get_channel_id_from_name(channel_name, api_key):
     """
@@ -117,12 +118,13 @@ def get_latest_video_metadata(channel_id, api_key):
         return None
 
 def main():
-    # Replace with your YouTube Data API key
-    with open('.api.toml', 'rb') as f:
-        API_KEY = tomllib.load(f)['youtube']
+    # Replace with your YouTube Data API key    
+    load_dotenv()
+    API_KEY = os.getenv('YOUTUBE_API_KEY')
     
     # Get channel name from user
-    channel_name = input("Enter the YouTube channel name (with or without @): ")
+    channel_name = "@CKGOChannelShow"
+    print(f"TEST: Fetching latest video for {channel_name}")
     
     # Get channel ID
     channel_id = get_channel_id_from_name(channel_name, API_KEY)
@@ -136,12 +138,10 @@ def main():
     
     if metadata:
         print("\nLatest Video Metadata:")
+        # print(metadata)
         print(f"Title: {metadata['title']}")
         print(f"Published: {metadata['published_at']}")
         print(f"URL: {metadata['url']}")
-        print(f"Views: {metadata['view_count']}")
-        print(f"Likes: {metadata['like_count']}")
-        print(f"Comments: {metadata['comment_count']}")
         print(f"\nDescription:\n{metadata['description']}")
     else:
         print("Could not fetch video metadata")
