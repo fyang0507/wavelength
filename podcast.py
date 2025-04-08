@@ -66,9 +66,11 @@ def get_latest_episode(podcast_name):
         print(f"Error processing podcast data: {e}")
         return e
 
-if __name__ == "__main__":
+
+def main():
     # Example usage
-    podcast_name = input("Enter podcast name: ")
+    podcast_name = "a16z Podcast"
+    print(f"TEST: Fetching latest episode for {podcast_name}")
     result = get_latest_episode(podcast_name)
     
     if result:
@@ -76,3 +78,7 @@ if __name__ == "__main__":
         print("-" * 50)
         for key, value in result.items():
             print(f"{key.replace('_', ' ').title()}: {value}")
+
+
+if __name__ == "__main__":
+    main()
