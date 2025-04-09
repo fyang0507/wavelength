@@ -5,7 +5,7 @@ It allows creating entries in a Notion database and adding content to pages.
 """
 
 import os
-from typing import Dict, Any, Optional
+from typing import Dict, Any, Optional, List
 from dotenv import load_dotenv
 from notion_client import Client
 from loguru import logger
@@ -21,46 +21,34 @@ def load_api_key() -> str:
 def create_database_entry(
     database_id: str,
     properties: Dict[str, Any],
-    content: Optional[str] = None
+    children_blocks: Optional[List[Dict[str, Any]]] = None
 ) -> Dict[str, Any]:
     """
-    Create a new entry in a Notion database and optionally add content to the page.
+    Create a new entry in a Notion database and optionally add content blocks to the page.
     
     Args:
         database_id: The ID of the Notion database
         properties: Dictionary of properties to set for the database entry
-        content: Optional content to add to the page
+        children_blocks: Optional list of Notion block objects to add to the page
     
     Returns:
         Dict containing the created page information
     """
     notion = Client(auth=load_api_key())
     
-    # Create the database entry
-    page = notion.pages.create(
-        parent={"database_id": database_id},
-        properties=properties
-    )
+    # Prepare arguments for page creation
+    create_args = {
+        "parent": {"database_id": database_id},
+        "properties": properties
+    }
     
-    # If content is provided, add it to the page
-    if content:
-        notion.blocks.children.append(
-            block_id=page["id"],
-            children=[
-                {
-                    "object": "block",
-                    "type": "paragraph",
-                    "paragraph": {
-                        "rich_text": [
-                            {
-                                "type": "text",
-                                "text": {"content": content}
-                            }
-                        ]
-                    }
-                }
-            ]
-        )
+    # If children_blocks are provided, add them directly during page creation
+    # This is more efficient than creating the page and then appending blocks
+    if children_blocks:
+        create_args["children"] = children_blocks
+        
+    # Create the database entry with properties and potentially children
+    page = notion.pages.create(**create_args)
     
     return page
 
@@ -75,7 +63,7 @@ def main():
             "title": [
                 {
                     "text": {
-                        "content": "Test Entry"
+                        "content": "Test Entry with Blocks"
                     }
                 }
             ]
@@ -92,11 +80,44 @@ def main():
         }
     }
     
-    content = "This is a test entry created via the Notion API."
+    # Example of children blocks
+    children_blocks = [
+        {
+            "object": "block",
+            "type": "heading_2",
+            "heading_2": {
+                "rich_text": [{"type": "text", "text": {"content": "Section 1"}}]
+            }
+        },
+        {
+            "object": "block",
+            "type": "paragraph",
+            "paragraph": {
+                "rich_text": [
+                    {
+                        "type": "text",
+                        "text": {"content": "This is the first paragraph under section 1."}
+                    }
+                ]
+            }
+        },
+        {
+            "object": "block",
+            "type": "divider",
+            "divider": {}
+        },
+        {
+            "object": "block",
+            "type": "heading_2",
+            "heading_2": {
+                "rich_text": [{"type": "text", "text": {"content": "Section 2"}}]
+            }
+        }
+    ]
     
     try:
-        page = create_database_entry(database_id, properties, content)
-        logger.info(f"Successfully created page: {page['url']}")
+        page = create_database_entry(database_id, properties, children_blocks)
+        logger.info(f"Successfully created page with blocks: {page['url']}")
     except Exception as e:
         logger.error(f"Failed to create Notion entry: {e}")
 
