@@ -7,8 +7,8 @@ and publishes the summarized content to a Notion database.
 import os
 from dotenv import load_dotenv
 from loguru import logger
-from preprocess import load_openai_client, process_data
-from notion import create_database_entry
+from jobs.preprocess import load_openai_client, process_data
+from connectors.notion import create_database_entry
 import json
 from datetime import datetime
 import pathlib

@@ -8,8 +8,8 @@ import os
 import tomllib
 from dotenv import load_dotenv
 from loguru import logger
-from youtube import get_channel_id_from_name, get_latest_video_metadata
-from podcast import get_latest_episode
+from connectors.youtube import get_channel_id_from_name, get_latest_video_metadata
+from connectors.podcast import get_latest_episode
 import json
 from datetime import datetime
 import pathlib
