@@ -1,10 +1,19 @@
 youtube = [
     "@CKGOChannelShow",
-]
+    "@3blue1brown",
+    "@巫师财经",
+    "@xiao_lin_shuo",
+    "@MeiTouJun",
+    "@TheMarketMemo",
+    "@WhiteboardCrypto"
 
+]
 
 podcast = [
     "a16z Podcast",
+    "NVIDIA Podcast",
+    "Decoder with Nilay Patel",
+    "Greymatter"
 ]
 
 newsletter = [
