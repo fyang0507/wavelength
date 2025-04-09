@@ -3,6 +3,7 @@ from googleapiclient.discovery import build
 from datetime import datetime
 from dotenv import load_dotenv
 import os
+import re
 
 def get_channel_id_from_name(channel_name, api_key):
     """
@@ -53,6 +54,7 @@ def get_channel_id_from_name(channel_name, api_key):
         print(f"Error finding channel ID: {str(e)}")
         return None
 
+
 def get_latest_video_metadata(channel_id, api_key):
     """
     Fetch metadata of the latest video from a YouTube channel
@@ -90,13 +92,10 @@ def get_latest_video_metadata(channel_id, api_key):
         
         # Get additional video statistics
         video_id = video_data['resourceId']['videoId']
-        # video_stats = youtube.videos().list(
-        #     part='statistics',
-        #     id=video_id
-        # ).execute()
-
-        # for testing
-        # return {'stats': video_stats, 'data': video_data}
+        video_details = youtube.videos().list(
+            part='contentDetails,statistics',
+            id=video_id
+        ).execute()
         
         # Combine video data and statistics
         metadata = {
@@ -106,9 +105,10 @@ def get_latest_video_metadata(channel_id, api_key):
             'video_id': video_id,
             'url': f'https://www.youtube.com/watch?v={video_id}',
             'thumbnail_url': video_data['thumbnails']['default']['url'], # this could be changed to other sizes
-            # 'view_count': video_stats['items'][0]['statistics']['viewCount'],
-            # 'like_count': video_stats['items'][0]['statistics'].get('likeCount', 'N/A'),
-            # 'comment_count': video_stats['items'][0]['statistics'].get('commentCount', 'N/A'),
+            'duration': video_details['items'][0]['contentDetails']['duration'],
+            'view_count': video_details['items'][0]['statistics']['viewCount'],
+            'like_count': video_details['items'][0]['statistics'].get('likeCount', 'N/A'),
+            'comment_count': video_details['items'][0]['statistics'].get('commentCount', 'N/A'),
         }
         
         return metadata
@@ -138,13 +138,15 @@ def main():
     
     if metadata:
         print("\nLatest Video Metadata:")
-        # print(metadata)
         print(f"Title: {metadata['title']}")
         print(f"Published: {metadata['published_at']}")
         print(f"URL: {metadata['url']}")
+        print(f"Duration: {metadata['duration']}")
+        print(f"View Count: {metadata['view_count']}")
+        print(f"Like Count: {metadata['like_count']}")
+        print(f"Comment Count: {metadata['comment_count']}")
         print(f"\nDescription:\n{metadata['description']}")
-    else:
-        print("Could not fetch video metadata")
+        print("\nNote: Captions are not available with API key authentication. OAuth2 authentication is required.")
 
 if __name__ == "__main__":
     main()
