@@ -33,6 +33,9 @@ jobs:
           
       - name: Run filter job
         run: python -m jobs.filter
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GIST_ID: ${{ secrets.GIST_ID }}
         
       - name: Run preprocess job
         run: python -m jobs.preprocess
