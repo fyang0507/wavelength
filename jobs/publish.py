@@ -7,7 +7,6 @@ and publishes the summarized content to a Notion database.
 import os
 from dotenv import load_dotenv
 from loguru import logger
-from jobs.preprocess import load_openai_client, process_data
 from connectors.notion import create_database_entry
 import json
 from datetime import datetime
@@ -51,7 +50,7 @@ def create_notion_blocks(processed_results):
         })
 
         # Add a toggle block with the title as the toggle text
-        title = result['data'].get('title', 'Untitled')
+        title = result.get('title', 'Untitled')
         toggle_block = {
             "object": "block",
             "type": "toggle",
@@ -62,7 +61,7 @@ def create_notion_blocks(processed_results):
         }
 
         # Add published date to toggle children
-        published_at = result['data'].get('published_at', 'Unknown date')
+        published_at = result.get('published_at', 'Unknown date')
         # Ensure published_at is a string
         if isinstance(published_at, datetime):
             published_at_str = published_at.isoformat()
@@ -82,7 +81,7 @@ def create_notion_blocks(processed_results):
         })
 
         # Add summary as a sublist within toggle
-        summary = result['data'].get('summary', 'No summary')
+        summary = result.get('summary', 'No summary')
         summary_block = {
             "object": "block",
             "type": "bulleted_list_item",
@@ -115,7 +114,7 @@ def create_notion_blocks(processed_results):
         toggle_block["toggle"]["children"].append(summary_block)
 
         # Add URL to toggle children
-        url = result['data'].get('url', 'No URL')
+        url = result.get('url', 'No URL')
         if url and url != 'No URL': # Only add bookmark if URL exists
              toggle_block["toggle"]["children"].append({
                  "object": "block",
@@ -185,7 +184,7 @@ def main():
         cache_dir = pathlib.Path("data")
         cache_dir.mkdir(exist_ok=True) # Ensure data directory exists
         current_date_str = datetime.now().strftime("%Y-%m-%d")
-        cache_file = cache_dir / f"filtered_results_{current_date_str}.json"
+        cache_file = cache_dir / f"processed_results_{current_date_str}.json"
 
         if cache_file.exists():
             logger.info(f"Loading filtered results: {cache_file}")

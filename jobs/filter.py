@@ -5,11 +5,11 @@ It identifies new entries and exports them to a filtered_results file with today
 """
 
 import json
-import pandas as pd
 from datetime import datetime
 import os
-import tomllib
 from loguru import logger
+
+
 def main():
     # Get today's date in the format YYYY-MM-DD
     today = datetime.now().strftime("%Y-%m-%d")

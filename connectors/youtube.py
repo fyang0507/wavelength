@@ -3,7 +3,6 @@ from googleapiclient.discovery import build
 from datetime import datetime
 from dotenv import load_dotenv
 import os
-import re
 
 def get_channel_id_from_name(channel_name, api_key):
     """
