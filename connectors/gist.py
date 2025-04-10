@@ -68,7 +68,7 @@ if __name__ == "__main__":
     
     # Get configuration from environment variables
     gist_id = os.getenv("GIST_ID")
-    token = os.getenv("GITHUB_TOKEN")
+    token = os.getenv("GIST_TOKEN")
     filename = os.getenv("GIST_FILENAME", "current.json")
     
     if not gist_id:
@@ -76,7 +76,7 @@ if __name__ == "__main__":
         sys.exit(1)
     
     if not token:
-        logger.error("GITHUB_TOKEN environment variable is required")
+        logger.error("GIST_TOKEN environment variable is required")
         sys.exit(1)
         
     try:

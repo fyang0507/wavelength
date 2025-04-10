@@ -94,7 +94,7 @@ def main():
         
         # Get Gist ID and GitHub token from environment variables
         gist_id = os.getenv("GIST_ID")
-        github_token = os.getenv("GITHUB_TOKEN")
+        gist_token = os.getenv("GIST_TOKEN")
         
         if not gist_id:
             logger.error("Missing GIST_ID in environment variables")
@@ -102,7 +102,7 @@ def main():
         
         # Load current entries from Gist
         try:
-            current_entries = read_from_gist(gist_id, github_token, "current.json")
+            current_entries = read_from_gist(gist_id, gist_token, "current.json")
         except Exception as e:
             logger.error(f"Error reading from gist: {e}")
             return
@@ -124,7 +124,7 @@ def main():
                     "content": json.dumps(filtered_results, ensure_ascii=False, indent=2)
                 }
             }
-            update_gist(gist_id, github_token, files_data)
+            update_gist(gist_id, gist_token, files_data)
             logger.info("Updated gist with current entries and filtered results")
         except Exception as e:
             logger.error(f"Error updating gist: {e}")
