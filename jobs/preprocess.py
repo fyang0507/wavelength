@@ -64,24 +64,38 @@ def process_data(client, raw_data):
 
 def main():
     """Main function to process YouTube data."""
-    # Example data structure from youtube.py's main() function
-    example_data = {
-        'title': 'Example Video Title',
-        'description': 'This is an example video description with some promotional content and links.',
-        'published_at': '2025-04-05 01:05:05',
-        'video_id': 'example_video_id',
-        'url': 'https://www.youtube.com/watch?v=example_video_id',
-        'thumbnail_url': 'https://example.com/thumbnail.jpg',
-        'duration': 'PT1H30M',
-        'view_count': '1000000',
-        'like_count': '10000',
-        'comment_count': '500'
-    }
+    # Get today's date in the format YYYY-MM-DD
+    today = datetime.now().strftime("%Y-%m-%d")
+    
+    # Define file paths
+    filtered_results_path = f"data/filtered_results_{today}.json"
+    processed_results_path = f"data/processed_results_{today}.json"
+    
+    # Check if filtered results file exists
+    if not os.path.exists(filtered_results_path):
+        print(f"Error: {filtered_results_path} does not exist.")
+        return
+    
+    # Load filtered results
+    with open(filtered_results_path, 'r', encoding='utf-8') as f:
+        filtered_results = json.load(f)
     
     client = load_openai_client()
-    # Process the data
-    processed_data = process_data(client, example_data)
-    print(processed_data)
+    processed_results = []
+    
+    # Process each video in the filtered results
+    for item in filtered_results:
+        video_data = item['data']
+        processed_data = process_data(client, video_data)
+        if processed_data:
+            processed_results.append(processed_data)
+    
+    # Save processed results
+    with open(processed_results_path, 'w', encoding='utf-8') as f:
+        json.dump(processed_results, f, ensure_ascii=False, indent=2)
+    
+    print(f"Processed {len(processed_results)} updates.")
+    print(f"Results saved to {processed_results_path}")
 
 
 if __name__ == "__main__":
