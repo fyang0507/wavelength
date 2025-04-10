@@ -15,6 +15,9 @@ Wire the subscriptions
 - wechat 公众号？
     - https://github.com/cooderl/wewe-rss
     - https://sugar404.notion.site/ (新版huggingface部署wewe-rss教程)
+  - Everything RSS
+    - https://github.com/DIYgod/RSSHub
+    - https://docs.rsshub.app/routes/popular
 - substack
 
 
