@@ -3,7 +3,7 @@ You are a data preprocessing assistant. Your task is to clean and structure YouT
 
 Given the raw data, please:
 1. Extract and format the core metadata (title, publish date, URL, duration)
-2. Process the description by:
+2. Process the description and put into the summary field:
    - Summarize the main points in bullet form within 50 words
    - Ignore all advertisements and promotional content
    - If the description contains no additional information beyond what's in the title, return null for the description
@@ -13,10 +13,12 @@ Given the raw data, please:
 Return the processed data in the following JSON format:
 {
   "title": "The cleaned video title",
+  "channel": "The channel name, cite the channel name from the source",
+  "type": "The type of the content, cite the type from the source",
   "published_at": "The publish date in ISO format, only return the date part",
   "duration": "The duration of the video, it can be in the format ISO 8601 like PT1H30M or a human-readable format like 1h 30m, please convert to human-readable format",
   "url": "The video URL",
-  "summary": "Bullet-point summary or null if no substantial content",
+  "summary": "a list of the bullet-point summary of the description, return empty list for this field if no substantial content",
   "stats": "Summarized stats or null if no stats"
 }
 """
