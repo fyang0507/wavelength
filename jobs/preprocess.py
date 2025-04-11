@@ -10,6 +10,7 @@ import tomllib
 from datetime import datetime
 from openai import OpenAI
 from dotenv import load_dotenv
+from loguru import logger
 
 def json_datetime_serializer(obj):
     """JSON serializer for objects not serializable by default json code"""
@@ -84,9 +85,11 @@ def main():
     processed_results = []
     
     # Process each video in the filtered results
-    for item in filtered_results:
-        video_data = item['data']
-        processed_data = process_data(client, video_data)
+    for index, item in enumerate(filtered_results, 1):
+        # Log the item being processed with progress status
+        logger.info(f"Processing item {index}/{len(filtered_results)}: {item.get('channel', 'Unknown channel')} - {item.get('type', 'Unknown type')}")
+        
+        processed_data = process_data(client, item['data'])
         if processed_data:
             processed_results.append(processed_data)
     
