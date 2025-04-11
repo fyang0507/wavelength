@@ -105,9 +105,11 @@ def get_latest_video_metadata(channel_id, api_key):
             'url': f'https://www.youtube.com/watch?v={video_id}',
             'thumbnail_url': video_data['thumbnails']['default']['url'], # this could be changed to other sizes
             'duration': video_details['items'][0]['contentDetails']['duration'],
-            'view_count': video_details['items'][0]['statistics']['viewCount'],
-            'like_count': video_details['items'][0]['statistics'].get('likeCount', 'N/A'),
-            'comment_count': video_details['items'][0]['statistics'].get('commentCount', 'N/A'),
+            'stats': {
+                'view_count': video_details['items'][0]['statistics']['viewCount'],
+                'like_count': video_details['items'][0]['statistics'].get('likeCount', 'N/A'),
+                'comment_count': video_details['items'][0]['statistics'].get('commentCount', 'N/A'),
+            }
         }
         
         return metadata
