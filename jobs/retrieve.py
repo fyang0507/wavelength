@@ -146,8 +146,8 @@ def main():
 
         logger.info(f"Saving raw results to: {raw_data_file}")
         try:
-            with open(raw_data_file, 'w') as f:
-                json.dump(all_raw_results, f, indent=2)
+            with open(raw_data_file, 'w', encoding='utf-8') as f:
+                json.dump(all_raw_results, f, indent=2, ensure_ascii=False)
             logger.info("Successfully saved raw data.")
         except IOError as e:
             logger.error(f"Error saving raw data to {raw_data_file}: {e}")
