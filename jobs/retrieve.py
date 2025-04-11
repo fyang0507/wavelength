@@ -74,7 +74,7 @@ def process_youtube_channels(youtube_channels, env_vars):
             results.append({
                 'type': 'youtube',
                 'channel': channel_name,
-                'data': metadata  # Keep raw metadata here
+                **metadata  # Directly inject metadata dictionary
             })
 
     return results
@@ -101,7 +101,7 @@ def process_podcasts(podcast_names):
             results.append({
                 'type': 'podcast',
                 'channel': podcast_name,
-                'data': metadata  # Updated metadata with date-only published_at
+                **metadata  # Directly inject metadata dictionary
             })
         else:
              logger.warning(f"Could not fetch valid metadata for podcast '{podcast_name}'. Received: {metadata}")
@@ -128,11 +128,9 @@ def main():
 
         # --- Convert datetime objects to strings for JSON serialization ---
         for result in all_raw_results:
-            if 'data' in result and isinstance(result['data'], dict):
-                # Convert datetime objects to date strings (without time)
-                for key, value in result['data'].items():
-                    if isinstance(value, datetime):
-                        result['data'][key] = value.date().isoformat()
+            for key, value in result.items():
+                if isinstance(value, datetime):
+                    result[key] = value.date().isoformat()
 
         if not all_raw_results:
             logger.warning("No data retrieved from any source.")

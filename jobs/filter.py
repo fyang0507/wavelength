@@ -27,7 +27,7 @@ def filter_new_entries(raw_results, current_entries):
     filtered_results = []
     for item in raw_results:
         channel = item['channel']
-        published_at = item['data']['published_at']
+        published_at = item['published_at']
         
         # Check if this entry is not in current_entries
         # TODO: only need to retain the latest entry for each channel
