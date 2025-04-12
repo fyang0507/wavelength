@@ -196,9 +196,13 @@ def main():
                  logger.error(f"Error reading cache file {cache_file}: {e}. Re-processing.")
                  processed_results = None
         else:
-            logger.warning("No raw data found for today. Cannot proceed.")
+            logger.warning("No processed data found for today. Cannot proceed.")
             return
 
+        # check if empty
+        if not processed_results:
+            logger.warning("No processed results found. Cannot proceed.")
+            return
 
         # --- Send to Notion - create a single entry with multiple blocks --- 
         current_date_for_notion = datetime.now().strftime("%Y-%m-%d") # Use consistent date format
