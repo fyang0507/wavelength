@@ -11,9 +11,9 @@ Ref: https://github.com/SocialSisterYi/bilibili-API-collect/blob/master/docs/vid
 Note: There is no description for the video using this API. To get the description, another API is needed. See: https://github.com/SocialSisterYi/bilibili-API-collect/blob/master/docs/video/info.md#%E8%A7%86%E9%A2%91%E5%9F%BA%E6%9C%AC%E4%BF%A1%E6%81%AF
 """
 
+from datetime import datetime
 import json
 import subprocess
-import pandas as pd
 from loguru import logger
 from typing import Dict, Any
 
@@ -85,7 +85,7 @@ def format_video_data(video: Dict[str, Any]) -> Dict[str, Any]:
             "aid": video.get("aid"),
             "bvid": video.get("bvid"),
             "title": video.get("title"),
-            "published_at": pd.to_datetime(video.get("pubdate", 0), unit='s').date().isoformat() if video.get("pubdate") else None,
+            "published_at": datetime.fromtimestamp(video.get("pubdate", 0)).date().isoformat() if video.get("pubdate") else None,
             "duration": video.get("duration"), # in seconds
             "stats": {
                 "view_count": video.get("stat", {}).get("view", 0),
