@@ -11,6 +11,7 @@ setup(
         "requests",
         "google-api-python-client",
         "openai",
+        "anthropic",
         "notion-client",
     ],
     python_requires=">=3.12",
