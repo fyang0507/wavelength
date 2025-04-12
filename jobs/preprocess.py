@@ -87,10 +87,15 @@ def process_duration(raw_data):
     """Process and format duration from raw data."""
     iso_duration = raw_data.get('duration', '')
 
-    # if duration is in the form of "hh:mm:ss", convert to human-readable format in minutes and seconds
+    # if duration is in the form of "hh:mm:ss" or "mm:ss", convert to human-readable format
     if ':' in iso_duration:
-        hours, minutes, seconds = map(int, iso_duration.split(':'))
-        return f"{hours}h {minutes}m {seconds}s"
+        parts = iso_duration.split(':')
+        if len(parts) == 3:  # hh:mm:ss format
+            hours, minutes, seconds = map(int, parts)
+            return f"{hours}h {minutes}m {seconds}s"
+        elif len(parts) == 2:  # mm:ss format
+            minutes, seconds = map(int, parts)
+            return f"{minutes}m {seconds}s"
 
     # if duration is numerical, convert to human-readable format in minutes and seconds
     if isinstance(iso_duration, (int, str)) and str(iso_duration).isdigit():
