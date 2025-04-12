@@ -10,10 +10,12 @@ from dotenv import load_dotenv
 from loguru import logger
 from connectors.youtube import get_channel_id_from_name, get_latest_video_metadata
 from connectors.podcast import get_latest_episode
+from connectors.bilibili import get_user_videos, format_video_data
 import json
 from datetime import datetime
 import pathlib
 import email.utils  # For parsing RFC 822 date format
+import time
 
 def load_environment():
     """
@@ -108,6 +110,54 @@ def process_podcasts(podcast_names):
 
     return results
 
+def process_bilibili(bilibili_users):
+    """Process Bilibili users and return their latest video metadata."""
+    results = []
+    
+    if not bilibili_users:
+        logger.info("No Bilibili users found in subscriptions.")
+        return results
+        
+    for user in bilibili_users:
+        uid = user.get('uid')
+        name = user.get('name')
+        
+        if not uid:
+            logger.error(f"Missing uid for Bilibili user: {name}")
+            continue
+            
+        logger.info(f"Processing Bilibili user: {name} (uid: {uid})")
+        
+        # Get latest video metadata (limit to 1)
+        response = get_user_videos(uid, page_size=1)
+        
+        if response.get("code") != 0:
+            logger.error(f"Error fetching videos for Bilibili user '{name}': {response.get('message', 'Unknown error')}")
+            continue
+            
+        if "data" not in response or "archives" not in response["data"] or not response["data"]["archives"]:
+            logger.warning(f"No videos found for Bilibili user '{name}'")
+            continue
+            
+        # Get the latest video
+        latest_video = response["data"]["archives"][0]
+        time.sleep(5) # sleep for 5 seconds to avoid rate limit
+        
+        # Format the video data
+        metadata = format_video_data(latest_video)
+        
+        if metadata:
+            results.append({
+                'type': 'bilibili',
+                'channel': name,
+                **metadata  # Directly inject metadata dictionary
+            })
+
+        else:
+            logger.warning(f"Could not format metadata for Bilibili user '{name}'")
+            
+    return results
+
 def main():
     """Main function to retrieve data and save it."""
     try:
@@ -122,9 +172,12 @@ def main():
 
         # Process podcasts
         podcast_results = process_podcasts(subscriptions.get('podcast', []))
+        
+        # Process Bilibili users
+        bilibili_results = process_bilibili(subscriptions.get('bilibili', []))
 
         # Combine all results
-        all_raw_results = youtube_results + podcast_results
+        all_raw_results = youtube_results + podcast_results + bilibili_results
 
         # --- Convert datetime objects to strings for JSON serialization ---
         for result in all_raw_results:
