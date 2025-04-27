@@ -27,7 +27,7 @@ uid = 946974
 name = "影视飓风"
 
 [[bilibili]]
-uid = 13950434421
+uid = 1395043421
 name = "JoeCreator"
 
 [[bilibili]]
@@ -58,11 +58,9 @@ name = "毕导"
 uid = 39627524
 name = "食贫道"
 
-
 [[bilibili]]
 uid = 261485584
 name = "HOPICO"
-
 
 [[bilibili]]
 uid = 14583962
@@ -71,3 +69,7 @@ name = "思维实验室"
 [[bilibili]]
 uid = 23947287
 name = "小约翰可汗"
+
+[[bilibili]]
+uid = 693450094
+name = "磕书的阿冉叔"
