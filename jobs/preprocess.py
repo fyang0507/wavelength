@@ -13,7 +13,8 @@ import os
 import json
 import tomllib
 from datetime import datetime
-from loguru import logger
+# Import the logger from the centralized logging_config module
+from utils.logging_config import logger
 from connectors.llm import api_text_completion
 
 

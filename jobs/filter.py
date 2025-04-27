@@ -8,7 +8,8 @@ When running in GitHub Actions, it reads from and writes to a GitHub Gist instea
 import json
 from datetime import datetime
 import os
-from loguru import logger
+# Import the logger from the centralized logging_config module
+from utils.logging_config import logger
 from dotenv import load_dotenv
 from connectors.gist import read_from_gist, update_gist
 

@@ -6,7 +6,8 @@ and publishes the summarized content to a Notion database.
 
 import os
 from dotenv import load_dotenv
-from loguru import logger
+# Import the logger from the centralized logging_config module
+from utils.logging_config import logger
 from connectors.notion import create_database_entry
 import json
 from datetime import datetime

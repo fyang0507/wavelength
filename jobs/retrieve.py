@@ -7,7 +7,9 @@ listed in subscriptions.toml and saves the raw data to a JSON file.
 import os
 import tomllib
 from dotenv import load_dotenv
-from loguru import logger
+import sys
+# Import the logger from the centralized logging_config module
+from utils.logging_config import logger
 from connectors.youtube import get_channel_id_from_name, get_latest_video_metadata
 from connectors.podcast import get_latest_episode
 from connectors.bilibili import get_user_videos, format_video_data
