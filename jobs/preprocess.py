@@ -11,7 +11,6 @@ Key features:
 
 import os
 import json
-import tomllib
 from datetime import datetime
 # Import the logger from the centralized logging_config module
 from utils.logging_config import logger
@@ -88,6 +87,13 @@ def process_duration(raw_data):
     """Process and format duration from raw data."""
     iso_duration = raw_data.get('duration', '')
 
+    # if duration is numerical, convert to human-readable format in minutes and seconds
+    if isinstance(iso_duration, (int, str)) and str(iso_duration).isdigit():
+        iso_duration = int(iso_duration)
+        minutes = iso_duration // 60
+        seconds = iso_duration % 60
+        return f"{minutes}m {seconds}s"
+
     # if duration is in the form of "hh:mm:ss" or "mm:ss", convert to human-readable format
     if ':' in iso_duration:
         parts = iso_duration.split(':')
@@ -97,13 +103,6 @@ def process_duration(raw_data):
         elif len(parts) == 2:  # mm:ss format
             minutes, seconds = map(int, parts)
             return f"{minutes}m {seconds}s"
-
-    # if duration is numerical, convert to human-readable format in minutes and seconds
-    if isinstance(iso_duration, (int, str)) and str(iso_duration).isdigit():
-        iso_duration = int(iso_duration)
-        minutes = iso_duration // 60
-        seconds = iso_duration % 60
-        return f"{minutes}m {seconds}s"
     
     # Convert ISO 8601 duration to human-readable format
     if iso_duration.startswith('PT'):
@@ -154,13 +153,50 @@ def process_summary_with_llm(raw_data):
     }
 
     if summary_data["description"] == "":
-        return []
+        return ""
     
     # Prepare the user message with the data for summary
-    user_message = f"{json.dumps(summary_data, indent=2, default=json_datetime_serializer)}"
+    user_message = f"{json.dumps(summary_data, indent=2)}"
     # Call the completion API
-    return api_text_completion(model, system_prompt, user_message)
+    response = api_text_completion(model, system_prompt, user_message)
+    # Parse the response into a list of bullet points
+    return parse_bullet_points(response)
+
+
+def parse_bullet_points(text):
+    """
+    Parse a string containing bullet points into a list.
+    
+    Args:
+        text (str): Text containing bullet points with '-' or '*' as delimiters
         
+    Returns:
+        list: List of bullet points with delimiters and whitespace removed
+    """
+    if not text:
+        return []
+    
+    # Remove any leading/trailing whitespace
+    text = text.strip()
+    
+    # Check if the text is empty
+    if not text:
+        return []
+    
+    # Split by newlines and process each line
+    bullet_points = []
+    for line in text.split('\n'):
+        # Remove leading bullet markers (- or *) and whitespace
+        line = line.strip()
+        if line.startswith('-') or line.startswith('*'):
+            line = line[1:].strip()
+        
+        # Add non-empty lines to the list
+        if line:
+            bullet_points.append(line)
+    
+    return bullet_points
+
 
 def process_data(raw_data):
     """
