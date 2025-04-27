@@ -5,10 +5,7 @@ listed in subscriptions.toml and saves the raw data to a JSON file.
 """
 
 import os
-import tomllib
 from dotenv import load_dotenv
-import sys
-# Import the logger from the centralized logging_config module
 from utils.logging_config import logger
 from connectors.youtube import get_channel_id_from_name, get_latest_video_metadata
 from connectors.podcast import get_latest_episode
@@ -89,7 +86,7 @@ def process_podcasts(podcast_names):
                     # Set only the date part
                     metadata['published_at'] = dt.date().isoformat()
                 except (ValueError, TypeError) as e:
-                    logger.warning(f"Could not parse published_at date for podcast '{podcast_name}': {e}")
+                    logger.error(f"Could not parse published_at date for podcast '{podcast_name}': {e}")
             
             results.append({
                 'type': 'podcast',
@@ -97,7 +94,7 @@ def process_podcasts(podcast_names):
                 **metadata  # Directly inject metadata dictionary
             })
         else:
-             logger.warning(f"Could not fetch valid metadata for podcast '{podcast_name}'. Received: {metadata}")
+             logger.error(f"Could not fetch valid metadata for podcast '{podcast_name}'. Received: {metadata}")
 
     return results
 
@@ -127,7 +124,7 @@ def process_bilibili(bilibili_users):
             continue
             
         if "data" not in response or "archives" not in response["data"] or not response["data"]["archives"]:
-            logger.warning(f"No videos found for Bilibili user '{name}'")
+            logger.error(f"No videos found for Bilibili user '{name}'")
             continue
             
         # Get the latest video
@@ -145,7 +142,7 @@ def process_bilibili(bilibili_users):
             })
 
         else:
-            logger.warning(f"Could not format metadata for Bilibili user '{name}'")
+            logger.error(f"Could not format metadata for Bilibili user '{name}'")
             
     return results
 
@@ -177,7 +174,7 @@ def main():
                     result[key] = value.date().isoformat()
 
         if not all_raw_results:
-            logger.warning("No data retrieved from any source.")
+            logger.error("No data retrieved from any source.")
             return
 
         # --- Save Raw Data ---
