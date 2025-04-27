@@ -35,8 +35,13 @@ def load_environment():
 
     return required_env_vars
 
-def create_notion_blocks(processed_results):
-    """Creates the list of blocks for the Notion page body."""
+def create_notion_blocks(processed_results, error_content=None):
+    """Creates the list of blocks for the Notion page body.
+    
+    Args:
+        processed_results: List of processed content results
+        error_content: Optional error log content to include at the end
+    """
     children_blocks = []
     for result in processed_results:
         # Add a heading for each channel/podcast
@@ -61,23 +66,39 @@ def create_notion_blocks(processed_results):
 
         # Add published date to toggle children
         published_at = result.get('published_at', 'Unknown date')
-        # Ensure published_at is a string
-        if isinstance(published_at, datetime):
-            published_at_str = published_at.isoformat()
-        elif not isinstance(published_at, str):
-             published_at_str = str(published_at) # Fallback conversion
-        else:
-            published_at_str = published_at
-
         toggle_block["toggle"]["children"].append({
             "object": "block",
             "type": "bulleted_list_item",
             "bulleted_list_item": {
                 "rich_text": [
-                    {"type": "text", "text": {"content": f"Published: {published_at_str}"}}
+                    {"type": "text", "text": {"content": f"Published: {published_at}"}}
                 ]
             }
         })
+
+        # Add duration to toggle children
+        duration = result.get('duration', 'Unknown duration')
+        toggle_block["toggle"]["children"].append({
+            "object": "block",
+            "type": "bulleted_list_item",
+            "bulleted_list_item": {
+                "rich_text": [
+                    {"type": "text", "text": {"content": f"Duration: {duration}"}}
+                ]
+            }
+        })
+
+        # Add stats to toggle children
+        stats = result.get('stats', 'Unknown stats')
+        toggle_block["toggle"]["children"].append({
+            "object": "block",
+            "type": "bulleted_list_item",
+            "bulleted_list_item": {
+                "rich_text": [
+                    {"type": "text", "text": {"content": f"Stats: {str(stats)}"}}
+                ]
+            }
+        })       
 
         # Add summary as a sublist within toggle
         summary = result.get('summary', 'No summary')
@@ -142,34 +163,29 @@ def create_notion_blocks(processed_results):
             "divider": {}
         })
 
-    # Add raw JSON data in a toggle block at the end
-    # try:
-    #     raw_data_json = json.dumps(processed_results, indent=2)
-    #     children_blocks.append({
-    #         "object": "block",
-    #         "type": "heading_2",
-    #         "heading_2": {"rich_text": [{"type": "text", "text": {"content": "Processed Data"}}]}
-    #     })
-
-    #     # Create a toggle for raw data
-    #     raw_data_toggle = {
-    #         "object": "block",
-    #         "type": "toggle",
-    #         "toggle": {
-    #             "rich_text": [{"type": "text", "text": {"content": "Processed JSON Data"}}],
-    #             "children": [{
-    #                 "object": "block",
-    #                 "type": "code",
-    #                 "code": {
-    #                     "rich_text": [{"type": "text", "text": {"content": raw_data_json}}],
-    #                     "language": "json"
-    #                 }
-    #             }]
-    #         }
-    #     }
-    #     children_blocks.append(raw_data_toggle)
-    # except Exception as json_err:
-    #      logger.error(f"Could not serialize processed data for Notion code block: {json_err}")
+    # Add raw error data in a toggle block at the end
+    if error_content:
+        logger.info(f"Adding error content to Notion: {error_content[:2000]}")
+        # Add heading for errors section
+        children_blocks.append({
+            "object": "block",
+            "type": "heading_3",
+            "heading_3": {
+                "rich_text": [{"type": "text", "text": {"content": "Program Errors"}}]
+            }
+        })
+        
+        # Add error content in a toggle block
+        children_blocks.append({
+            "object": "block",
+            "type": "code",
+            "code": {
+                "rich_text": [
+                    {"type": "text", "text": {"content": error_content[:2000]}} # Limit to 2000 characters
+                ],
+                "language": "plain text"
+            }
+        })
 
     return children_blocks
 
@@ -204,6 +220,20 @@ def main():
         if not processed_results:
             logger.warning("No processed results found. Cannot proceed.")
             return
+            
+        # --- Load error log file if it exists ---
+        error_content = None
+        error_log_path = cache_dir / f"app_errors_{current_date_str}.log"
+        
+        if error_log_path.exists() and error_log_path.stat().st_size > 0:
+            try:
+                with open(error_log_path, 'r') as f:
+                    error_content = f.read()
+                logger.info(f"Loaded error logs from {error_log_path}")
+            except Exception as e:
+                logger.error(f"Failed to read error log file {error_log_path}: {str(e)}")
+        else:
+            logger.info(f"No errors found in log file or file does not exist: {error_log_path}")
 
         # --- Send to Notion - create a single entry with multiple blocks --- 
         current_date_for_notion = datetime.now().strftime("%Y-%m-%d") # Use consistent date format
@@ -233,7 +263,7 @@ def main():
         }
 
         # --- Create Notion block list --- 
-        children_blocks = create_notion_blocks(processed_results)
+        children_blocks = create_notion_blocks(processed_results, error_content)
 
         # Create single Notion entry with all blocks
         notion_db_id = env_vars['NOTION_DATABASE_ID']
