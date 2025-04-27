@@ -18,6 +18,7 @@ from datetime import datetime
 import pathlib
 import email.utils  # For parsing RFC 822 date format
 import time
+from utils.toml_loader import load_toml_file
 
 def load_environment():
     """
@@ -41,18 +42,6 @@ def load_environment():
         raise ValueError(f"Missing required environment variables for retrieval: {', '.join(missing_vars)}")
 
     return required_env_vars
-
-def load_subscriptions():
-    """Load subscriptions from the TOML file."""
-    try:
-        with open("subscriptions.toml", "rb") as f:
-            return tomllib.load(f)
-    except FileNotFoundError:
-        logger.error("subscriptions.toml not found.")
-        raise
-    except tomllib.TOMLDecodeError as e:
-        logger.error(f"Error decoding subscriptions.toml: {e}")
-        raise
 
 
 def process_youtube_channels(youtube_channels, env_vars):
@@ -167,7 +156,7 @@ def main():
         env_vars = load_environment()
 
         # Load subscriptions
-        subscriptions = load_subscriptions()
+        subscriptions = load_toml_file("subscriptions.toml")
 
         # Process YouTube channels
         youtube_results = process_youtube_channels(subscriptions.get('youtube', []), env_vars)

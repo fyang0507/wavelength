@@ -16,6 +16,7 @@ from datetime import datetime
 # Import the logger from the centralized logging_config module
 from utils.logging_config import logger
 from connectors.llm import api_text_completion
+from utils.toml_loader import load_toml_file
 
 
 def json_datetime_serializer(obj):
@@ -27,8 +28,7 @@ def json_datetime_serializer(obj):
 
 def load_prompt_config():
     """Load the prompt configuration from the TOML file."""
-    with open("prompts/preprocess.toml", "rb") as f:
-        config = tomllib.load(f)
+    config = load_toml_file("prompts/preprocess.toml")
     return config["description_summary"]["system"], config["description_summary"]["model"]
 
 
