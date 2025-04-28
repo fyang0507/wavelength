@@ -10,10 +10,13 @@ setup(
         "python-dotenv",
         "requests",
         "google-api-python-client",
-        "openai",
-        "anthropic",
-        "notion-client",
     ],
+    extras_require={
+        "openai": ["openai"],
+        "claude": ["anthropic"],
+        "notion": ["notion-client"],
+        "dev": ["jupyterlab"]
+    },
     python_requires=">=3.12",
     description="A personal TLDR tool for subscribed contents",
 ) 

@@ -1,0 +1,11 @@
+pandas
+numpy
+requests
+google-api-python-client
+jupyterlab
+openai
+anthropic
+loguru
+notion-client
+python-dotenv 
+markitdown[all]
