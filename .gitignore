@@ -1,6 +1,9 @@
 # Credentials
-.api.toml
 .env
+
+# Jupyter
+.ipynb_checkpoints/
+.DS_Store
 
 # Data
 data/
