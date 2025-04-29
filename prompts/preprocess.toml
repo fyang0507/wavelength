@@ -15,6 +15,5 @@ Instructions:
   - If the provided data is in **English**, summarize in **English**.
   - If the provided data is in **Chinese** (either Traditional or Simplified), summarize in **Simplified Chinese**."""
 description_summary.model = "gpt-4.1-nano"
-# description_summary.model = "gpt-4o"
-# description_summary.model = "claude-3-5-haiku-20241022"
+# description_summary.model = "gpt-4o-mini"
  
