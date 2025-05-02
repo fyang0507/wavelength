@@ -1,7 +1,7 @@
 from setuptools import setup, find_packages
 
 setup(
-    name="personal_tldr",
+    name="wavelength",
     version="0.1.0",
     packages=find_packages(),
     include_package_data=True,
@@ -18,5 +18,5 @@ setup(
         "dev": ["jupyterlab"]
     },
     python_requires=">=3.12",
-    description="A personal TLDR tool for subscribed contents",
+    description="A content curation tool that filters subscriptions using AI to deliver only meaningful content that matters to you",
 ) 
