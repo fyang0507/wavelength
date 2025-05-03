@@ -1,0 +1,57 @@
+---
+description: wavelength project structure
+globs:
+alwaysApply: true
+---
+
+# Project Structure Guide
+
+This project is organized into these main directories:
+
+## Connectors
+
+The [connectors/](mdc:connectors) directory contains individual connectors that link to different external sources:
+
+- [YouTube](mdc:connectors/youtube.py) - YouTube video content processing
+- [Podcast](mdc:connectors/podcast.py) - Podcast audio content processing
+- [Notion](mdc:connectors/notion.py) - Notion document integration
+- [Newsletter](mdc:connectors/newsletter.py) - Email newsletter processing (HTML)
+- [Newsletter Plain](mdc:connectors/newsletter_plain.py) - Plain text newsletter processing
+- [Bilibili](mdc:connectors/bilibili.py) - Bilibili video platform integration
+- [LLM](mdc:connectors/llm.py) - Language model integration
+- [Gist](mdc:connectors/gist.py) - GitHub Gist integration
+- [Website](mdc:connectors/website.py) - Website content extraction
+
+Each connector implements functionality to fetch and process data from its respective source.
+
+## Jobs
+
+The [jobs/](mdc:jobs) directory is used for orchestration and building workflows:
+
+- [Retrieve](mdc:jobs/retrieve.py) - Data retrieval from various sources
+- [Preprocess](mdc:jobs/preprocess.py) - Data preparation and transformation
+- [Filter](mdc:jobs/filter.py) - Content filtering and selection
+- [Curate](mdc:jobs/curate.py) - Content curation and organization
+- [Publish](mdc:jobs/publish.py) - Content publishing and distribution
+
+These jobs work together to create complete data processing pipelines.
+
+## Utils
+
+The [utils/](mdc:utils) directory contains utility functions and helpers:
+
+- [Toml Loader](mdc:utils/toml_loader.py) - Configuration loading utilities
+- [Logging Config](mdc:utils/logging_config.py) - Logging configuration
+
+## Prompts
+
+The [prompts/](mdc:prompts) directory contains prompt templates for LLM interactions:
+
+- [Curator](mdc:prompts/curator.toml) - Prompts for content curation
+- [Preprocess](mdc:prompts/preprocess.toml) - Prompts for content preprocessing
+- [Website](mdc:prompts/website.toml) - Prompts for website content extraction
+
+## Project Configuration
+
+- [subscriptions.toml](mdc:subscriptions.toml) - Source configurations and subscriptions
+- [requirements.txt](mdc:requirements.txt) - Project dependencies
