@@ -35,137 +35,252 @@ def load_environment():
 
     return required_env_vars
 
+def parse_duration_to_minutes(duration_str):
+    """
+    Parse a duration string like "5m 30s" or "1h 20m 15s" into total minutes.
+    
+    Args:
+        duration_str (str): Duration string in format like "5m 30s" or "1h 20m 15s"
+        
+    Returns:
+        float: Total duration in minutes
+    """
+    # Default values
+    hours = 0
+    minutes = 0
+    seconds = 0
+    
+    # Handle empty or invalid cases
+    if not duration_str or duration_str == 'Unknown duration':
+        return 0
+    
+    # Parse hours if present
+    if 'h' in duration_str:
+        h_parts = duration_str.split('h')
+        try:
+            hours = int(h_parts[0].strip().split()[-1])
+        except (ValueError, IndexError):
+            pass
+        duration_str = h_parts[1]
+    
+    # Parse minutes if present
+    if 'm' in duration_str:
+        m_parts = duration_str.split('m')
+        try:
+            minutes = int(m_parts[0].strip().split()[-1])
+        except (ValueError, IndexError):
+            pass
+        duration_str = m_parts[1]
+    
+    # Parse seconds if present
+    if 's' in duration_str:
+        try:
+            seconds = int(duration_str.strip().split('s')[0].strip())
+        except (ValueError, IndexError):
+            pass
+    
+    # Convert all to minutes
+    return hours * 60 + minutes + seconds / 60
+
+
+def calculate_total_duration(items):
+    """
+    Calculate the total duration of a list of content items.
+    
+    Args:
+        items (list): List of content items, each with a 'duration' field
+        
+    Returns:
+        str: Formatted total duration string (e.g., "2h 30m")
+    """
+    total_minutes = 0
+    
+    # Sum up all durations
+    for item in items:
+        duration_str = item.get('duration', '0m')
+        total_minutes += parse_duration_to_minutes(duration_str)
+    
+    # Format total duration
+    total_hours = int(total_minutes // 60)
+    remaining_minutes = int(total_minutes % 60)
+    
+    # Create formatted string
+    total_duration = ""
+    if total_hours > 0:
+        total_duration += f"{total_hours}h "
+    total_duration += f"{remaining_minutes}m"
+    
+    return total_duration
+
+
 def create_notion_blocks(processed_results, error_content=None):
     """Creates the list of blocks for the Notion page body.
     
     Args:
-        processed_results: List of processed content results
+        processed_results: Dictionary of categorized content results with keys 'must_see', 'might_be_interested', 'you_may_skip'
         error_content: Optional error log content to include at the end
     """
     children_blocks = []
-    for result in processed_results:
-        # Add a heading for each channel/podcast
+    
+    # Create sections for each category
+    categories = [
+        ("Must-see", processed_results.get("must_see", [])),
+        ("Might-be-interested", processed_results.get("might_be_interested", [])),
+        ("You-may-skip", processed_results.get("you_may_skip", []))
+    ]
+    
+    for category_name, category_items in categories:
+        if not category_items:
+            continue  # Skip empty categories
+        
+        # Calculate total duration for the category
+        total_duration = calculate_total_duration(category_items)
+            
+        # Add top-level heading for the category
         children_blocks.append({
             "object": "block",
-            "type": "heading_3",
-            "heading_3": {
-                "rich_text": [{"type": "text", "text": {"content": f"{result['channel']} ({result['type']})"}}]
+            "type": "heading_1",
+            "heading_1": {
+                "rich_text": [{"type": "text", "text": {"content": f"{category_name} ({len(category_items)} items, {total_duration})"}}]
             }
         })
-
-        # Add a toggle block with the title as the toggle text
-        title = result.get('title', 'Untitled')
-        toggle_block = {
-            "object": "block",
-            "type": "toggle",
-            "toggle": {
-                "rich_text": [{"type": "text", "text": {"content": title}}],
-                "children": []
-            }
-        }
-
-        # Add published date to toggle children
-        published_at = result.get('published_at', 'Unknown date')
-        toggle_block["toggle"]["children"].append({
-            "object": "block",
-            "type": "bulleted_list_item",
-            "bulleted_list_item": {
-                "rich_text": [
-                    {"type": "text", "text": {"content": f"Published: {published_at}"}}
-                ]
-            }
-        })
-
-        # Add duration to toggle children
-        duration = result.get('duration', 'Unknown duration')
-        toggle_block["toggle"]["children"].append({
-            "object": "block",
-            "type": "bulleted_list_item",
-            "bulleted_list_item": {
-                "rich_text": [
-                    {"type": "text", "text": {"content": f"Duration: {duration}"}}
-                ]
-            }
-        })
-
-        # Add stats to toggle children
-        stats = result.get('stats', 'Unknown stats')
-        toggle_block["toggle"]["children"].append({
-            "object": "block",
-            "type": "bulleted_list_item",
-            "bulleted_list_item": {
-                "rich_text": [
-                    {"type": "text", "text": {"content": f"Stats: {str(stats)}"}}
-                ]
-            }
-        })       
-
-        # Add summary as a sublist within toggle
-        summary = result.get('summary', 'No summary')
-        summary_block = {
-            "object": "block",
-            "type": "bulleted_list_item",
-            "bulleted_list_item": {
-                "rich_text": [
-                    {"type": "text", "text": {"content": "Summary:"}}
-                ]
-            }
-        }
-
-        # If summary is a list, add each item as a sub-bullet
-        if isinstance(summary, list):
-            summary_children = []
-            for item in summary:
-                summary_children.append({
+        
+        # Group items by channel
+        channel_groups = {}
+        for item in category_items:
+            channel = f"{item['channel']} ({item['type']})"
+            if channel not in channel_groups:
+                channel_groups[channel] = []
+            channel_groups[channel].append(item)
+        
+        # Process each channel group
+        for channel, items in channel_groups.items():
+            # Add channel as heading 3
+            children_blocks.append({
+                "object": "block",
+                "type": "heading_3",
+                "heading_3": {
+                    "rich_text": [{"type": "text", "text": {"content": channel}}]
+                }
+            })
+            
+            # Process each content item
+            for result in items:
+                # Create toggle for each content item with the title as the toggle text
+                title = result.get('title', 'Untitled')
+                toggle_block = {
+                    "object": "block",
+                    "type": "toggle",
+                    "toggle": {
+                        "rich_text": [{"type": "text", "text": {"content": title}}],
+                        "children": []
+                    }
+                }
+                
+                # Add details to the toggle
+                # Published date
+                published_at = result.get('published_at', 'Unknown date')
+                toggle_block["toggle"]["children"].append({
                     "object": "block",
                     "type": "bulleted_list_item",
                     "bulleted_list_item": {
                         "rich_text": [
-                            {"type": "text", "text": {"content": item}}
-                        ],
-                        "color": "default"
+                            {"type": "text", "text": {"content": f"Published: {published_at}"}}
+                        ]
                     }
                 })
-            # Add summary children to the summary block
-            if summary_children: # Only add children if there are any
-                 summary_block["bulleted_list_item"]["children"] = summary_children
 
-        # Add summary block to toggle children
-        toggle_block["toggle"]["children"].append(summary_block)
+                # Duration
+                duration = result.get('duration', 'Unknown duration')
+                toggle_block["toggle"]["children"].append({
+                    "object": "block",
+                    "type": "bulleted_list_item",
+                    "bulleted_list_item": {
+                        "rich_text": [
+                            {"type": "text", "text": {"content": f"Duration: {duration}"}}
+                        ]
+                    }
+                })
 
-        # Add URL to toggle children
-        url = result.get('url', 'No URL')
-        if url and url != 'No URL': # Only add bookmark if URL exists
-             toggle_block["toggle"]["children"].append({
-                 "object": "block",
-                 "type": "bookmark",
-                 "bookmark": {
-                     "url": url,
-                     "caption": [],
-                 }
-             })
-        else:
-             toggle_block["toggle"]["children"].append({
-                 "object": "block",
-                 "type": "paragraph",
-                 "paragraph": {
-                     "rich_text": [{"type": "text", "text": {"content": "URL: Not available"}}]
-                 }
-             })
+                # Stats
+                stats = result.get('stats', 'Unknown stats')
+                toggle_block["toggle"]["children"].append({
+                    "object": "block",
+                    "type": "bulleted_list_item",
+                    "bulleted_list_item": {
+                        "rich_text": [
+                            {"type": "text", "text": {"content": f"Stats: {str(stats)}"}}
+                        ]
+                    }
+                })       
 
-        # Add the complete toggle block to children_blocks
-        children_blocks.append(toggle_block)
+                # # Reason (if available)
+                # if "reason" in result:
+                #     toggle_block["toggle"]["children"].append({
+                #         "object": "block",
+                #         "type": "bulleted_list_item",
+                #         "bulleted_list_item": {
+                #             "rich_text": [
+                #                 {"type": "text", "text": {"content": f"Reason: {result['reason']}"}}
+                #             ]
+                #         }
+                #     })
 
-        # Add a divider between items
+                # Summary
+                summary = result.get('summary', 'No summary')
+                if isinstance(summary, list) and summary:
+                    for item in summary:
+                        toggle_block["toggle"]["children"].append({
+                            "object": "block",
+                            "type": "bulleted_list_item",
+                            "bulleted_list_item": {
+                                "rich_text": [
+                                    {"type": "text", "text": {"content": item}}
+                                ]
+                            }
+                        })
+                elif summary:
+                    toggle_block["toggle"]["children"].append({
+                        "object": "block",
+                        "type": "bulleted_list_item",
+                        "bulleted_list_item": {
+                            "rich_text": [
+                                {"type": "text", "text": {"content": "No summary available"}}
+                            ]
+                        }
+                    })
+
+                # Add URL if available
+                url = result.get('url', '')
+                if url:
+                    toggle_block["toggle"]["children"].append({
+                        "object": "block",
+                        "type": "bookmark",
+                        "bookmark": {
+                            "url": url
+                        }
+                    })
+
+                # Add the toggle block for this content item
+                children_blocks.append(toggle_block)
+            
+            # # Add a divider after all items in this channel
+            # children_blocks.append({
+            #     "object": "block",
+            #     "type": "divider",
+            #     "divider": {}
+            # })
+        
+        # Add a divider between categories
         children_blocks.append({
             "object": "block",
             "type": "divider",
             "divider": {}
         })
 
-    # Add raw error data in a toggle block at the end
+    # Add raw error data at the end
     if error_content:
-        logger.info(f"Adding error content to Notion: {error_content[:2000]}")
+        logger.info("Adding error content to Notion")
         # Add heading for errors section
         children_blocks.append({
             "object": "block",
@@ -199,26 +314,26 @@ def main():
         cache_dir = pathlib.Path("data")
         cache_dir.mkdir(exist_ok=True) # Ensure data directory exists
         current_date_str = datetime.now().strftime("%Y-%m-%d")
-        cache_file = cache_dir / f"processed_results_{current_date_str}.json"
+        cache_file = cache_dir / f"curated_results_{current_date_str}.json"
 
         if cache_file.exists():
-            logger.info(f"Loading filtered results: {cache_file}")
+            logger.info(f"Loading curated results: {cache_file}")
             try:
                 with open(cache_file, 'r') as f:
-                    processed_results = json.load(f)
+                    curated_results = json.load(f)
             except json.JSONDecodeError:
                 logger.error(f"Error decoding cache file {cache_file}. Re-processing.")
-                processed_results = None # Force reprocessing if cache is corrupt
+                curated_results = None # Force reprocessing if cache is corrupt
             except IOError as e:
                  logger.error(f"Error reading cache file {cache_file}: {e}. Re-processing.")
-                 processed_results = None
+                 curated_results = None
         else:
-            logger.warning("No processed data found for today. Cannot proceed.")
+            logger.warning("No curated data found for today. Cannot proceed.")
             return
 
         # check if empty
-        if not processed_results:
-            logger.warning("No processed results found. Cannot proceed.")
+        if not curated_results:
+            logger.warning("No curated results found. Cannot proceed.")
             return
             
         # --- Load error log file if it exists ---
@@ -238,6 +353,13 @@ def main():
         # --- Send to Notion - create a single entry with multiple blocks --- 
         current_date_for_notion = datetime.now().strftime("%Y-%m-%d") # Use consistent date format
         combined_title = f"Daily Update - {current_date_for_notion}"
+
+        # Count total items
+        total_items = (
+            len(curated_results.get("must_see", [])) +
+            len(curated_results.get("might_be_interested", [])) +
+            len(curated_results.get("you_may_skip", []))
+        )
 
         # Create Notion properties for the single entry
         properties = {
@@ -263,14 +385,14 @@ def main():
         }
 
         # --- Create Notion block list --- 
-        children_blocks = create_notion_blocks(processed_results, error_content)
+        children_blocks = create_notion_blocks(curated_results, error_content)
 
         # Create single Notion entry with all blocks
         notion_db_id = env_vars['NOTION_DATABASE_ID']
         page = create_database_entry(notion_db_id, properties, children_blocks)
 
         if page and 'url' in page:
-             logger.info(f"Successfully created combined Notion entry: {page['url']}")
+             logger.info(f"Successfully created combined Notion entry with {total_items} items: {page['url']}")
         else:
              logger.error(f"Failed to create Notion entry. Response: {page}")
 
