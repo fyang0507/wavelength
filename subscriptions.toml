@@ -5,8 +5,8 @@ youtube = [
     "@xiao_lin_shuo",
     "@MeiTouJun",
     "@TheMarketMemo",
-    "@WhiteboardCrypto"
-
+    "@WhiteboardCrypto",
+    "@entreprenuership_opportunities",
 ]
 
 podcast = [
@@ -14,7 +14,7 @@ podcast = [
     "NVIDIA Podcast",
     "Decoder with Nilay Patel",
     "Greymatter",
-    "Training Data"
+    "Training Data Sequoia Capital"
 ]
 
 
