@@ -189,10 +189,6 @@ def main():
                 "current.json": {
                     "content": json.dumps(updated_current_entries, ensure_ascii=False, indent=2)
                 },
-                # TODO: this can be removed after testing
-                f"filtered_results_{today}.json": {
-                    "content": json.dumps(filtered_results, ensure_ascii=False, indent=2)
-                }
             }
             update_gist(gist_id, gist_token, files_data)
             logger.info("Updated gist with current entries and filtered results")
