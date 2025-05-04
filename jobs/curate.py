@@ -7,10 +7,58 @@ using LLM-based content evaluation against the user's interest profile.
 
 import os
 import json
+import re
 from datetime import datetime
 from loguru import logger
 from connectors.llm import api_text_completion
 from utils.toml_loader import load_toml_file
+
+
+def parse_duration_to_seconds(duration_str):
+    """
+    Parse a duration string like "1h 30m" or "45s" to seconds.
+    
+    Args:
+        duration_str: String representation of duration (e.g., "1h 30m", "45s", "2m 15s")
+        
+    Returns:
+        int: Total seconds
+    """
+    # If already an integer, return it
+    if isinstance(duration_str, int):
+        return duration_str
+    
+    # If it's a string that can be directly converted to int, do so
+    if isinstance(duration_str, str) and duration_str.isdigit():
+        return int(duration_str)
+    
+    # Otherwise parse the time format
+    total_seconds = 0
+    
+    # Extract hours
+    hour_match = re.search(r'(\d+)h', duration_str)
+    if hour_match:
+        total_seconds += int(hour_match.group(1)) * 3600
+    
+    # Extract minutes
+    minute_match = re.search(r'(\d+)m', duration_str)
+    if minute_match:
+        total_seconds += int(minute_match.group(1)) * 60
+    
+    # Extract seconds
+    second_match = re.search(r'(\d+)s', duration_str)
+    if second_match:
+        total_seconds += int(second_match.group(1))
+    
+    # If no matches found but it's a numeric string, treat as seconds
+    if total_seconds == 0 and duration_str.strip():
+        try:
+            return int(duration_str)
+        except ValueError:
+            logger.warning(f"Could not parse duration: {duration_str}, using 0")
+            return 0
+    
+    return total_seconds
 
 
 def load_curator_config():
@@ -44,7 +92,7 @@ def get_llm_curation(processed_data):
         return curated_content
     except json.JSONDecodeError:
         logger.error("Failed to parse curator response as JSON")
-        logger.error(f"Response: {response}")
+        logger.error(f"Response:\n{response}")
         return None
 
 
@@ -68,46 +116,45 @@ def parse_curation_response(curated_content, processed_data):
         "might_be_interested": [],
         "you_may_skip": []
     }
-
     
     # Process must_see items
-    for idx, reason in curated_content.get("must_see", []).items():
+    for item in curated_content.get("must_see", []):
         try:
-            index = int(idx)
+            index = int(item["idx"])
             if 0 <= index < len(processed_data):
                 content_item = processed_data[index].copy()
-                content_item["reason"] = reason
+                content_item["reason"] = item["reason"]
                 result["must_see"].append(content_item)
             else:
                 logger.warning(f"Index {index} out of range for must_see")
-        except ValueError:
-            logger.warning(f"Invalid index: {idx} in must_see")
+        except (ValueError, KeyError) as e:
+            logger.warning(f"Error processing must_see item: {e}")
     
     # Process might_be_interested items
-    for idx, reason in curated_content.get("might_be_interested", []).items():
+    for item in curated_content.get("might_be_interested", []):
         try:
-            index = int(idx)
+            index = int(item["idx"])
             if 0 <= index < len(processed_data):
                 content_item = processed_data[index].copy()
-                content_item["reason"] = reason
+                content_item["reason"] = item["reason"]
                 result["might_be_interested"].append(content_item)
             else:
                 logger.warning(f"Index {index} out of range for might_be_interested")
-        except ValueError:
-                logger.warning(f"Invalid index: {idx} in might_be_interested")
+        except (ValueError, KeyError) as e:
+            logger.warning(f"Error processing might_be_interested item: {e}")
     
     # Process skip items
-    for idx, reason in curated_content.get("you_may_skip", []).items():
+    for item in curated_content.get("you_may_skip", []):
         try:
-            index = int(idx)
+            index = int(item["idx"])
             if 0 <= index < len(processed_data):
                 content_item = processed_data[index].copy()
-                content_item["reason"] = reason
+                content_item["reason"] = item["reason"]
                 result["you_may_skip"].append(content_item)
             else:
                 logger.warning(f"Index {index} out of range for you_may_skip")
-        except ValueError:
-            logger.warning(f"Invalid index: {idx} in you_may_skip")
+        except (ValueError, KeyError) as e:
+            logger.warning(f"Error processing you_may_skip item: {e}")
     
     return result
 
@@ -163,10 +210,27 @@ def main():
         might_be_interested_count = len(curated_results.get("might_be_interested", []))
         you_may_skip_count = len(curated_results.get("you_may_skip", []))
         
+        # Calculate duration sums with proper time parsing
+        must_see_duration = sum(parse_duration_to_seconds(item['duration'])
+                              for item in curated_results.get('must_see', []))
+        might_be_interested_duration = sum(parse_duration_to_seconds(item['duration'])
+                                        for item in curated_results.get('might_be_interested', []))
+        you_may_skip_duration = sum(parse_duration_to_seconds(item['duration'])
+                                  for item in curated_results.get('you_may_skip', []))
+        
+        # Format durations as hours and minutes for display
+        def format_duration(seconds):
+            hours = seconds // 3600
+            minutes = (seconds % 3600) // 60
+            if hours > 0:
+                return f"{hours}h {minutes}m"
+            else:
+                return f"{minutes}m"
+        
         logger.info(f"Curated {len(processed_results)} items into:")
-        logger.info(f"- Must see: {must_see_count} items, total duration: {sum(item['duration'] for item in curated_results.get('must_see', []))}")
-        logger.info(f"- Might be interested: {might_be_interested_count} items, total duration: {sum(item['duration'] for item in curated_results.get('might_be_interested', []))}")
-        logger.info(f"- You may skip: {you_may_skip_count} items, total duration: {sum(item['duration'] for item in curated_results.get('you_may_skip', []))}")
+        logger.info(f"- Must see: {must_see_count} items, total duration: {format_duration(must_see_duration)}")
+        logger.info(f"- Might be interested: {might_be_interested_count} items, total duration: {format_duration(might_be_interested_duration)}")
+        logger.info(f"- You may skip: {you_may_skip_count} items, total duration: {format_duration(you_may_skip_duration)}")
         logger.info(f"Results saved to {curated_results_path}")
     else:
         logger.error("Curation failed")

@@ -32,9 +32,9 @@ Themes your employer is not interested in and you should avoid:
 ## Output Format
 Your return should be in JSON format with the following fields:
 {
-    "must_see": {idx: reason, ...} # list of must-see items, using their index in the input list, reason is a short description of why it is a must-see
-    "might_be_interested": {idx: reason, ...} # list of might-be-interested items, using their index in the input list, reason is a short description of why it is might-be-interested
-    "you_may_skip": {idx: reason, ...} # the rest of the items, reason is a short description of why you may skip
+    "must_see": [{"idx": idx, "reason": reason}, ...] # list of must-see items, using their index in the input list, reason is a short description of why it is a must-see
+    "might_be_interested": [{"idx": idx, "reason": reason}, ...] # list of might-be-interested items, using their index in the input list, reason is a short description of why it is might-be-interested
+    "you_may_skip": [{"idx": idx, "reason": reason}, ...] # the rest of the items, reason is a short description of why you may skip
 }
 """
 curator.model = "gpt-4.1-mini"
