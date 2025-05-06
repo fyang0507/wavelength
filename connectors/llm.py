@@ -1,7 +1,7 @@
 from openai import OpenAI
 from anthropic import Anthropic
 import os
-from loguru import logger
+from utils.logging_config import logger
 from dotenv import load_dotenv
 
 # Call the appropriate API based on the model name

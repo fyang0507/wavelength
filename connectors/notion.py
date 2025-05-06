@@ -8,7 +8,7 @@ import os
 from typing import Dict, Any, Optional, List
 from dotenv import load_dotenv
 from notion_client import Client
-from loguru import logger
+from utils.logging_config import logger
 
 def load_api_key() -> str:
     """Load Notion API key from environment variables."""

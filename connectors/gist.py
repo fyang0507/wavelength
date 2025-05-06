@@ -6,7 +6,7 @@ It allows for retrieving data from and updating content to GitHub Gists.
 
 import json
 import requests
-from loguru import logger
+from utils.logging_config import logger
 import sys
 import os
 from dotenv import load_dotenv

@@ -14,7 +14,7 @@ Note: There is no description for the video using this API. To get the descripti
 from datetime import datetime
 import json
 import subprocess
-from loguru import logger
+from utils.logging_config import logger
 from typing import Dict, Any
 
 
