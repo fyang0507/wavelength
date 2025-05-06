@@ -8,7 +8,7 @@ import requests
 from pathlib import Path
 from utils.logging_config import logger
 from markdownify import markdownify
-from readability import Document
+from bs4 import BeautifulSoup
 from urllib.parse import urlparse
 
 
@@ -50,7 +50,7 @@ def fetch_webpage(url: str):
 
 def parse_html_to_markdown(html_content):
     """
-    Parses HTML content to Markdown using readability and markdownify.
+    Parses HTML content directly to Markdown using markdownify.
     
     Args:
         html_content: The HTML content to parse
@@ -59,13 +59,12 @@ def parse_html_to_markdown(html_content):
         tuple: (markdown_content, title) or (None, None) if an error occurs
     """
     try:
-        # Process content with readability
-        doc = Document(html_content)
-        title = doc.title()
-        main_content = doc.summary()
+        # Extract title using BeautifulSoup
+        soup = BeautifulSoup(html_content, 'html.parser')
+        title = soup.title.string if soup.title else "Untitled Page"
         
-        # Convert to markdown
-        markdown_content = markdownify(main_content)
+        # Convert to markdown directly
+        markdown_content = markdownify(html_content)
         
         return markdown_content, title
     except Exception as e:
