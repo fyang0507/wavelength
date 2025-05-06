@@ -13,25 +13,16 @@ per minute for Chinese text. These values can be adjusted as needed.
 import re
 from logging_config import logger
 
-def estimate_read_time(
-    md_text: str,
-    wpm_en: int = 200,
-    cpm_zh: int = 850,
-    debug: bool = False
-) -> str:
+def process_markdown_text(md_text: str) -> str:
     """
-    Estimate mixed-language (English + Chinese) reading time for a Markdown document.
-
+    Process Markdown text by removing formatting elements for reading time estimation.
+    
     Args:
         md_text: The Markdown content as a string.
-        wpm_en: Reading speed for English (words per minute). Default: 200.
-        cpm_zh: Reading speed for Chinese (characters per minute). Default: 850.
-        debug: Whether to write the cleaned text to a file for debugging.
-
+        
     Returns:
-        A string formatted as 'X m Y s' representing minutes and seconds.
+        Cleaned text with Markdown formatting removed.
     """
-
     text = md_text
 
     # --- 1. Remove Markdown noise ---
@@ -47,11 +38,27 @@ def estimate_read_time(
     text = re.sub(r'https?://\S+|www\.\S+', '', text)           # raw URLs
     text = re.sub(r'^[#>*\-\+]\s*', '', text, flags=re.MULTILINE)  # heading/list markers
     text = text.replace('*', '').replace('_', '')               # emphasis
+            
+    return text
 
-    if debug:
-        with open('data/debug_read_time_estimate.md', 'w', encoding='utf-8') as f:
-            f.write(text)
+def estimate_read_time(
+    text: str,
+    wpm_en: int = 200,
+    cpm_zh: int = 850,
+    debug: bool = False
+) -> str:
+    """
+    Estimate mixed-language (English + Chinese) reading time for processed text.
 
+    Args:
+        text: The processed text content with Markdown formatting removed.
+        wpm_en: Reading speed for English (words per minute). Default: 200.
+        cpm_zh: Reading speed for Chinese (characters per minute). Default: 850.
+        debug: Whether to log debug information.
+
+    Returns:
+        A string formatted as 'X m Y s' representing minutes and seconds.
+    """
     # --- 2. Count English words ---
     english_words = re.findall(r'\b[a-zA-Z]+\b', text)
     num_en = len(english_words)
@@ -77,6 +84,15 @@ def estimate_read_time(
 
 
 if __name__ == "__main__":
+    # Reading file now separated from computation
     with open('data/36kr/content/蜜雪冰城多风光_海底捞就多落寞-36氪.md', 'r', encoding='utf-8') as f:
-        text = f.read()
-    logger.info(estimate_read_time(text, debug=True))
+        md_text = f.read()
+    
+    # Process the text first
+    processed_text = process_markdown_text(md_text, debug=True)
+    with open('data/debug_read_time_estimate.md', 'w', encoding='utf-8') as f:
+        f.write(processed_text)
+    
+    # Then estimate reading time
+    read_time = estimate_read_time(processed_text, debug=True)
+    logger.info(read_time)
