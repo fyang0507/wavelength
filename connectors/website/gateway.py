@@ -194,7 +194,7 @@ def main():
     latest_release = find_latest_release(markdown_content)
     
     if latest_release:
-        logger.info(f"Latest release information: {json.dumps(latest_release, indent=2)}")
+        logger.info(f"Latest release information: {json.dumps(latest_release, indent=2, ensure_ascii=False)}")
         logger.success(f"Found latest release URL: {latest_release.get('url', 'N/A')}")
         logger.success(f"Gateway process complete. Latest release metadata captured.")
     else:
