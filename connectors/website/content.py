@@ -99,7 +99,7 @@ def summarize_content(markdown_content):
             user_message=markdown_content
         )
         
-        logger.success(f"Successfully generated summary")
+        logger.success(f"Successfully generated summary: {response}")
         return response
     
     except Exception as e:
@@ -107,7 +107,7 @@ def summarize_content(markdown_content):
         return None
 
 
-def save_processed_content(result, output_dir="data/website/content"):
+def save_processed_content(result, output_dir):
     """
     Saves processed content to files.
     
