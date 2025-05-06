@@ -7,9 +7,8 @@ Provides basic scraping functionality for sites without anti-bot protection.
 import requests
 from pathlib import Path
 from utils.logging_config import logger
-from markdownify import markdownify
-from bs4 import BeautifulSoup
 from urllib.parse import urlparse
+from .utils import parse_html_to_markdown
 
 
 def fetch_webpage(url: str):
@@ -48,31 +47,7 @@ def fetch_webpage(url: str):
         return None, None
 
 
-def parse_html_to_markdown(html_content):
-    """
-    Parses HTML content directly to Markdown using markdownify.
-    
-    Args:
-        html_content: The HTML content to parse
-        
-    Returns:
-        tuple: (markdown_content, title) or (None, None) if an error occurs
-    """
-    try:
-        # Extract title using BeautifulSoup
-        soup = BeautifulSoup(html_content, 'html.parser')
-        title = soup.title.string if soup.title else "Untitled Page"
-        
-        # Convert to markdown directly
-        markdown_content = markdownify(html_content)
-        
-        return markdown_content, title
-    except Exception as e:
-        logger.error(f"Error parsing HTML to Markdown: {e}")
-        return None, None
-
-
-def scrape_website_to_markdown(url: str):
+def scrape(url: str):
     """
     Scrapes a website using requests and converts content to Markdown.
     
@@ -110,24 +85,12 @@ def main():
     
     # Ensure output directory exists
     Path(output_dir).mkdir(parents=True, exist_ok=True)
-    
-    # Generate file paths
-    domain = urlparse(target_url).netloc
-    path = urlparse(target_url).path.replace('/', '_')
-    if path.startswith('_'):
-        path = path[1:]
-    if path.endswith('_'):
-        path = path[:-1]
         
-    # Limit filename length
-    if len(path) > 50:
-        path = path[:50]
-        
-    output_filepath = Path(output_dir) / f"{domain}_{path}.md"
+    output_filepath = Path(output_dir) / f"demo_basic.md"
     html_path = str(output_filepath).replace('.md', '.html')
     
     # Scrape website
-    html_content, markdown_content, title = scrape_website_to_markdown(
+    html_content, markdown_content, title = scrape(
         url=target_url
     )
     
