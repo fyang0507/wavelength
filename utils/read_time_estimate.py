@@ -11,11 +11,13 @@ per minute for Chinese text. These values can be adjusted as needed.
 """
 
 import re
+from logging_config import logger
 
 def estimate_read_time(
     md_text: str,
     wpm_en: int = 200,
-    cpm_zh: int = 150
+    cpm_zh: int = 850,
+    debug: bool = False
 ) -> str:
     """
     Estimate mixed-language (English + Chinese) reading time for a Markdown document.
@@ -23,7 +25,8 @@ def estimate_read_time(
     Args:
         md_text: The Markdown content as a string.
         wpm_en: Reading speed for English (words per minute). Default: 200.
-        cpm_zh: Reading speed for Chinese (characters per minute). Default: 150.
+        cpm_zh: Reading speed for Chinese (characters per minute). Default: 850.
+        debug: Whether to write the cleaned text to a file for debugging.
 
     Returns:
         A string formatted as 'X m Y s' representing minutes and seconds.
@@ -34,10 +37,20 @@ def estimate_read_time(
     # --- 1. Remove Markdown noise ---
     text = re.sub(r'```.*?```', '', text, flags=re.DOTALL)      # code fences
     text = re.sub(r'`[^`]*`', '', text)                         # inline code
-    text = re.sub(r'$begin:math:display$([^$end:math:display$]+)\]$begin:math:text$[^)]*$end:math:text$', r'\1', text)        # links [text](url)
+    
+    # First remove image markdown - ![text](url)
+    text = re.sub(r'!\[[^\]]*\]\([^)]*\)', '', text)
+    
+    # Then handle regular markdown links - [text](url)
+    text = re.sub(r'\[([^\]]*)\]\([^)]*\)', r'\1', text)
+    
     text = re.sub(r'https?://\S+|www\.\S+', '', text)           # raw URLs
     text = re.sub(r'^[#>*\-\+]\s*', '', text, flags=re.MULTILINE)  # heading/list markers
     text = text.replace('*', '').replace('_', '')               # emphasis
+
+    if debug:
+        with open('data/debug_read_time_estimate.md', 'w', encoding='utf-8') as f:
+            f.write(text)
 
     # --- 2. Count English words ---
     english_words = re.findall(r'\b[a-zA-Z]+\b', text)
@@ -50,9 +63,20 @@ def estimate_read_time(
     # --- 4. Compute reading time ---
     secs_en = (num_en / wpm_en) * 60 if num_en else 0
     secs_zh = (num_zh / cpm_zh) * 60 if num_zh else 0
+
+    if debug:
+        logger.info(f"num_en: {num_en}, num_zh: {num_zh}")
+        logger.info(f"secs_en: {secs_en}, secs_zh: {secs_zh}")
+
     total_secs = secs_en + secs_zh
 
     mins = int(total_secs // 60)
     secs = int(round(total_secs % 60))
 
     return f"{mins} m {secs} s"
+
+
+if __name__ == "__main__":
+    with open('data/36kr/content/蜜雪冰城多风光_海底捞就多落寞-36氪.md', 'r', encoding='utf-8') as f:
+        text = f.read()
+    logger.info(estimate_read_time(text, debug=True))
