@@ -9,3 +9,4 @@ loguru
 notion-client
 python-dotenv 
 markitdown[all]
+playwright
