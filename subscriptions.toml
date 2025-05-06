@@ -17,6 +17,30 @@ podcast = [
     "Training Data Sequoia Capital"
 ]
 
+[[website]]
+channel = "远川研究所"
+url = "https://36kr.com/user/5294210"
+gateway_type = "basic"
+content_type = "playwright"
+
+[[website]]
+channel = "远川投资评论"
+url = "https://36kr.com/user/5294208"
+gateway_type = "basic"
+content_type = "playwright"
+
+[[website]]
+channel = "远川科技评论"
+url = "https://36kr.com/user/5060931"
+gateway_type = "basic"
+content_type = "playwright"
+
+[[website]]
+channel = "有数DataVision"
+url = "https://36kr.com/user/5294205"
+gateway_type = "basic"
+content_type = "playwright"
+
 
 newsletter = [
     "placeholder",
@@ -74,3 +98,7 @@ name = "小约翰可汗"
 [[bilibili]]
 uid = 693450094
 name = "磕书的阿冉叔"
+
+[[bilibili]]
+uid = 253553776
+name = "饭统戴老板"
