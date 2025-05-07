@@ -1,9 +1,8 @@
 ---
 description: wavelength project structure
-globs:
+globs: 
 alwaysApply: true
 ---
-
 # Project Structure Guide
 
 This project is organized into these main directories:
@@ -20,7 +19,7 @@ The [connectors/](mdc:connectors) directory contains individual connectors that 
 - [Bilibili](mdc:connectors/bilibili.py) - Bilibili video platform integration
 - [LLM](mdc:connectors/llm.py) - Language model integration
 - [Gist](mdc:connectors/gist.py) - GitHub Gist integration
-- [Website](mdc:connectors/website.py) - Website content extraction
+- [Website](mdc:connectors/website) - Website content extraction (Note: This is now a directory/module)
 
 Each connector implements functionality to fetch and process data from its respective source.
 
@@ -28,7 +27,8 @@ Each connector implements functionality to fetch and process data from its respe
 
 The [jobs/](mdc:jobs) directory is used for orchestration and building workflows:
 
-- [Retrieve](mdc:jobs/retrieve.py) - Data retrieval from various sources
+- [Fetch Content](mdc:jobs/fetch_content.py) - Fetches content from various sources
+- [Check Update](mdc:jobs/check_update.py) - Checks for updates from sources
 - [Preprocess](mdc:jobs/preprocess.py) - Data preparation and transformation
 - [Filter](mdc:jobs/filter.py) - Content filtering and selection
 - [Curate](mdc:jobs/curate.py) - Content curation and organization
@@ -40,8 +40,11 @@ These jobs work together to create complete data processing pipelines.
 
 The [utils/](mdc:utils) directory contains utility functions and helpers:
 
+- [Connector Cache](mdc:utils/connector_cache.py) - Caching utilities for connectors
 - [Toml Loader](mdc:utils/toml_loader.py) - Configuration loading utilities
 - [Logging Config](mdc:utils/logging_config.py) - Logging configuration
+- [Read Time Estimate](mdc:utils/read_time_estimate.py) - Estimates reading time for content
+- [LLM Response Format](mdc:utils/llm_response_format.py) - Utilities for parsing LLM responses
 
 ## Prompts
 
