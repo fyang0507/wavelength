@@ -6,7 +6,7 @@ Return format:
 {
     "title": "string, use the original title in its original language",
     "url": "string",
-    "published_at": "string"
+    "published_at": "string, date in YYYY-MM-DD format"
 }
 """
 gateway.model = "gpt-4.1-nano"
