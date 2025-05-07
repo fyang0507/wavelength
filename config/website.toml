@@ -3,5 +3,5 @@
 
 ["https://36kr.com"]
 gateway_scraper_type = "basic"
-gateway_content_type = "html"
+gateway_content_type = "markdown" # html or markdown
 content_scraper_type = "playwright" 
