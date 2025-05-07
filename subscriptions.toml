@@ -24,31 +24,18 @@ newsletter = [
 [[website]]
 channel = "远川研究所 (36氪)"
 source_url = "https://36kr.com/user/5294210"
-gateway_scraper_type = "basic"
-gateway_content_type = "html"
-content_scraper_type = "playwright"
 
 [[website]]
 channel = "远川投资评论 (36氪)"
 source_url = "https://36kr.com/user/5294208"
-gateway_scraper_type = "basic"
-gateway_content_type = "html"
-content_scraper_type = "playwright"
 
 [[website]]
 channel = "远川科技评论 (36氪)"
 source_url = "https://36kr.com/user/5060931"
-gateway_scraper_type = "basic"
-gateway_content_type = "html"
-content_scraper_type = "playwright"
 
 [[website]]
 channel = "有数DataVision (36氪)"
 source_url = "https://36kr.com/user/5294205"
-gateway_scraper_type = "basic"
-gateway_content_type = "html"
-content_scraper_type = "playwright"
-
 
 [[bilibili]]
 uid = 946974
