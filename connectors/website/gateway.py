@@ -4,9 +4,9 @@ Script to scrape a website and save the content to a Markdown file.
 Also sends the markdown content to LLM to find the latest articles/newsletter metadata.
 """
 
+from datetime import datetime
 from utils.logging_config import logger
 import json
-import re
 import tomllib
 from pathlib import Path
 from connectors.llm import api_text_completion
@@ -110,28 +110,14 @@ def find_latest_release(markdown_content, html_content, gateway_content_type="ht
         try:
             # Try to parse directly if response is already in JSON format
             latest_release = json.loads(response)
+            if latest_release['published_at'] == 'N/A':
+                # Assign today's date when published date is not available
+                latest_release['published_at'] = datetime.now().strftime('%Y-%m-%d')
             logger.success(f"Successfully found latest release: {latest_release}")
             return latest_release
         except json.JSONDecodeError:
-            # If not JSON, extract JSON-like content from the response
-            logger.warning("Response is not in valid JSON format. Attempting to extract JSON content.")
-            
-            # Try to find JSON-like structure in the response
-            json_match = re.search(r'\{.*\}', response, re.DOTALL)
-            if json_match:
-                try:
-                    latest_release = json.loads(json_match.group(0))
-                    logger.success(f"Successfully extracted JSON from response: {latest_release}")
-                    return latest_release
-                except json.JSONDecodeError:
-                    logger.error("Failed to parse JSON from extracted content")
-            
-            logger.error(f"Failed to parse JSON from LLM response: {response[:200]}...")
-            return {"error": "Failed to parse response", "raw_response": response[:500]}
-    
-    except Exception as e:
-        logger.error(f"Error in find_latest_release: {e}")
-        return None
+            raise ValueError(f"Failed to parse JSON from LLM response: {response[:200]}...")
+
 
 
 def main():
