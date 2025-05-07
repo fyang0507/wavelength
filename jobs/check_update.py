@@ -15,6 +15,7 @@ from connectors.youtube import check_latest_updates as youtube_check_updates
 from connectors.podcast import check_latest_updates as podcast_check_updates
 from connectors.bilibili import check_latest_updates as bilibili_check_updates
 from connectors.website.pipeline import check_latest_updates as website_check_updates
+from connectors.website.pipeline import get_validated_website_config
 import json
 from datetime import datetime
 import pathlib
@@ -56,7 +57,7 @@ def process_youtube_channels(youtube_channels, env_vars):
 
     for channel_name in youtube_channels:
         logger.info(f"Checking for updates from YouTube channel: {channel_name}")
-        
+
         # Check for updates and cache results
         update_info = youtube_check_updates(channel_name, youtube_api_key)
         if update_info:
@@ -117,32 +118,40 @@ def process_bilibili(bilibili_users):
 def process_websites(websites):
     """Check for updates from websites and return results."""
     results = []
-    for website in websites:
-        channel = website.get('channel')
-        source_url = website.get('source_url')
+    
+    for website_subscription in websites:
+        channel = website_subscription.get('channel')
+        source_url = website_subscription.get('source_url')
         
         if not channel or not source_url:
-            logger.error(f"Missing channel or source_url for website: {website}")
+            logger.error(f"Missing channel or source_url in website subscription: {website_subscription}. Skipping.")
             continue
             
-        logger.info(f"Checking for updates from website: {channel}")
+        logger.info(f"Processing website subscription: {channel} ({source_url})")
         
-        # Optional parameters for website checks
-        gateway_scraper_type = website.get('gateway_scraper_type', 'basic')
-        gateway_content_type = website.get('gateway_content_type', 'html')
-        
-        # Check for updates and cache results
-        update_info = website_check_updates(
-            channel=channel,
-            source_url=source_url,
-            gateway_scraper_type=gateway_scraper_type,
-            gateway_content_type=gateway_content_type
-        )
-        
-        if update_info:
-            results.append(update_info)
-        else:
-            logger.warning(f"No updates found for website: {channel}")
+        try:
+            scraper_params_for_site = get_validated_website_config(source_url=source_url, channel=channel)
+            logger.info(f"Using validated scraper config for {channel}: {scraper_params_for_site}")
+
+            update_info = website_check_updates(
+                channel=channel,
+                source_url=source_url,
+                website_config=scraper_params_for_site 
+            )
+            
+            if update_info:
+                if 'source_url' not in update_info:
+                    update_info['source_url'] = source_url
+                results.append(update_info)
+            else:
+                logger.warning(f"No updates found for website: {channel}")
+
+        except ValueError as e:
+            # Errors from get_validated_website_config (e.g., config not found, incomplete) are caught here
+            logger.error(f"Skipping website {channel} due to configuration error: {e}")
+        except Exception as e:
+            # Other unexpected errors during website_check_updates
+            logger.error(f"Error during website_check_updates for {channel} ({source_url}): {e}. Skipping.")
             
     return results
 
@@ -152,7 +161,7 @@ def main():
     try:
         # Load environment variables
         env_vars = load_environment()
-        
+
         # Remove all previous caches
         cache = ConnectorCache()
         cache_dir = cache.cache_dir
@@ -203,7 +212,7 @@ def main():
         except IOError as e:
             logger.error(f"Error saving update check results to {results_file}: {e}")
         except TypeError as e:
-            logger.error(f"Error serializing data to JSON: {e}")
+             logger.error(f"Error serializing data to JSON: {e}")
 
     except Exception as e:
         logger.error(f"An error occurred during update checking: {str(e)}")
