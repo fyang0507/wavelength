@@ -11,7 +11,7 @@ per minute for Chinese text. These values can be adjusted as needed.
 """
 
 import re
-from logging_config import logger
+from utils.logging_config import logger
 
 def process_markdown_text(md_text: str) -> str:
     """
