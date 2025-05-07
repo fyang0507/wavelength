@@ -3,21 +3,22 @@
 YouTube Connector for fetching content from YouTube channels.
 
 This module provides functionality to:
-1. Retrieve channel IDs from channel names/handles
-2. Fetch the latest video metadata from a specified channel
-3. Filter videos based on duration requirements
+1. Check for updates from YouTube channels (first phase)
+2. Retrieve cached content from YouTube channels (second phase)
+3. Fetch channel IDs from channel names/handles
+4. Filter videos based on duration requirements
 
 The connector uses the YouTube Data API v3 and requires an API key.
 See: https://developers.google.com/youtube/v3/docs/
 
 Usage:
-    from connectors.youtube import get_latest_video_metadata, get_channel_id_from_name
+    from connectors.youtube import check_latest_updates, get_latest_update_details
     
-    # Get a channel ID from a channel name
-    channel_id = get_channel_id_from_name("@channelname", api_key)
+    # Phase 1: Check for updates and cache data
+    update_info = check_latest_updates("@channelname", api_key, duration_min=300)
     
-    # Get latest video with minimum duration of 5 minutes
-    video_metadata = get_latest_video_metadata(channel_id, api_key, duration_min=300)
+    # Phase 2: Retrieve from cache when needed
+    video_metadata = get_latest_update_details("@channelname")
     
     # Access video details
     video_title = video_metadata['title']
@@ -32,6 +33,100 @@ from datetime import datetime
 from dotenv import load_dotenv
 import os
 from utils.logging_config import logger
+from typing import Dict, Any, Optional, Union
+from utils.connector_cache import ConnectorCache
+
+def generate_cache_key(channel_name: str) -> str:
+    """
+    Generate a standardized cache key for YouTube channel data.
+    
+    Args:
+        channel_name: The name of the YouTube channel
+        
+    Returns:
+        A standardized cache key
+    """
+    # Convert channel name to lowercase, remove @ if present, and replace spaces with underscores
+    normalized_name = channel_name.lstrip('@').lower().replace(' ', '_')
+    
+    # Return the normalized name as the cache key
+    # Note: The date will be added by ConnectorCache
+    return normalized_name
+
+def check_latest_updates(channel_name: str, api_key: str, duration_min: int = 300) -> Optional[Dict[str, Any]]:
+    """
+    Check for updates from a YouTube channel and cache the latest video metadata.
+    
+    Args:
+        channel_name: YouTube channel name or handle (with or without '@')
+        api_key: YouTube Data API key
+        duration_min: Minimum duration in seconds for videos to include (default: 300, i.e., 5 minutes)
+                     Set to 0 to include all videos regardless of duration
+        
+    Returns:
+        Dict containing metadata for the latest video or None if error
+    """
+    # Initialize cache
+    cache = ConnectorCache()
+    cache_key = generate_cache_key(channel_name)
+    
+    try:
+        # Get channel ID
+        channel_id = get_channel_id_from_name(channel_name, api_key)
+        if not channel_id:
+            logger.error(f"Could not find channel ID for '{channel_name}'")
+            return None
+        
+        # Get the latest video metadata
+        metadata = get_latest_video_metadata(channel_id, api_key, duration_min)
+        if not metadata:
+            logger.warning(f"No suitable videos found for channel: {channel_name}")
+            return None
+        
+        # Add channel information
+        metadata["type"] = "youtube"
+        metadata["channel"] = channel_name
+        
+        # Cache the result
+        cache.save("youtube", cache_key, metadata)
+        
+        return metadata
+        
+    except Exception as e:
+        logger.error(f"Error checking updates for YouTube channel '{channel_name}': {e}")
+        return None
+
+def get_latest_update_details(channel_name: str) -> Dict[str, Any]:
+    """
+    Get full content and metadata for the latest YouTube video from cache.
+    Does not implement fetching logic - only retrieves from cache.
+    
+    Args:
+        channel_name: Name of the YouTube channel
+        
+    Returns:
+        Dict containing complete metadata for the latest video
+        
+    Raises:
+        ValueError: If video not found in cache
+    """
+    if not channel_name:
+        raise ValueError("Channel name is required to get video content from cache")
+    
+    # Try to get from cache
+    cache = ConnectorCache()
+    cache_key = generate_cache_key(channel_name)
+    cached_data = cache.load("youtube", cache_key)
+    
+    # Check if we found cached data
+    if cached_data:
+        logger.info(f"Using cached data for YouTube channel: {channel_name}")
+        return cached_data
+    
+    # If we reach here, the video was not in cache
+    error_msg = f"No video found in cache for YouTube channel {channel_name}"
+    logger.error(error_msg)
+    raise ValueError(error_msg)
 
 def get_channel_id_from_name(channel_name, api_key):
     """
@@ -208,7 +303,7 @@ def get_latest_video_metadata(channel_id, api_key, duration_min=300):
         metadata = {
             'title': video_data['title'],
             'description': video_data['description'],
-            'published_at': datetime.strptime(video_data['publishedAt'], '%Y-%m-%dT%H:%M:%SZ'),
+            'published_at': datetime.strptime(video_data['publishedAt'], '%Y-%m-%dT%H:%M:%SZ').isoformat(),
             'video_id': video_id,
             'url': f'https://www.youtube.com/watch?v={video_id}',
             'thumbnail_url': video_data['thumbnails']['default']['url'],
@@ -228,43 +323,41 @@ def get_latest_video_metadata(channel_id, api_key, duration_min=300):
         return None
 
 def main():
-    # Replace with your YouTube Data API key    
+    """Example demonstrating the two-phase YouTube content retrieval approach."""
+    # Load API key from environment
     load_dotenv()
     API_KEY = os.getenv('YOUTUBE_API_KEY')
     
-    # Get channel name from user
+    # Example YouTube channel
     channel_name = "@entreprenuership_opportunities"
-    logger.info(f"Starting YouTube connector test for channel: {channel_name}")
-    print(f"TEST: Fetching latest video for {channel_name}")
     
-    # Get channel ID
-    channel_id = get_channel_id_from_name(channel_name, API_KEY)
+    print(f"Demonstrating two-phase approach for YouTube channel: {channel_name}")
     
-    if not channel_id:
-        logger.error(f"Could not find channel ID for '{channel_name}'")
-        print(f"Could not find channel ID for '{channel_name}'")
+    # PHASE 1: Check for updates
+    print("\n=== Phase 1: Check for updates ===")
+    print("In this phase, we check for new videos and cache complete data.")
+    latest = check_latest_updates(channel_name, API_KEY, duration_min=300)
+    
+    if not latest:
+        print("No suitable videos found")
         return
         
-    print(f"Channel ID: {channel_id}")
+    print(f"Found latest video: {latest['title']}")
+    print(f"Published: {latest['published_at']}")
+    print(f"URL: {latest['url']}")
     
-    # Get latest video with minimum duration of 5 minutes (300 seconds)
-    logger.info("Fetching video with 5-minute duration minimum")
-    metadata = get_latest_video_metadata(channel_id, API_KEY, duration_min=300)
-    
-    if metadata:
-        print("\nLatest Video Metadata (min duration: 5 minutes):")
-        print(f"Title: {metadata['title']}")
-        print(f"Published: {metadata['published_at']}")
-        print(f"URL: {metadata['url']}")
-        print(f"Duration: {metadata['duration']}")
-        print(f"View Count: {metadata['stats']['view_count']}")
-        print(f"Like Count: {metadata['stats']['like_count']}")
-        print(f"Comment Count: {metadata['stats']['comment_count']}")
-        print(f"\nDescription:\n{metadata['description']}")
-        print("\nNote: Captions are not available with API key authentication. OAuth2 authentication is required.")
-    else:
-        logger.warning("Failed to find any suitable videos")
-        print("No suitable videos found")
+    # PHASE 2: Get full content from cache
+    print("\n=== Phase 2: Get content from cache ===")
+    print("In this phase, we retrieve the full content from cache without re-fetching.")
+    try:
+        full_content = get_latest_update_details(channel_name)
+        print(f"Retrieved from cache: {full_content['title']}")
+        print(f"Duration: {full_content.get('duration', 'N/A')}")
+        print(f"URL: {full_content['url']}")
+        print(f"View Count: {full_content['stats'].get('view_count', 'N/A')}")
+        print(f"Comment Count: {full_content['stats'].get('comment_count', 'N/A')}")
+    except ValueError as e:
+        print(f"Error retrieving from cache: {e}")
 
 if __name__ == "__main__":
     main()
