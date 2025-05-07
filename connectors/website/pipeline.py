@@ -277,7 +277,6 @@ def get_latest_update_details(
             "url": content_url,
             "duration": content_result['read_time'],
             "summary": content_result['summary'],
-            "content": content_result.get('content', '')
         }
         
         logger.success(f"Successfully retrieved content for {channel}")
