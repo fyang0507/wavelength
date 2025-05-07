@@ -10,6 +10,7 @@ from pathlib import Path
 from connectors.llm import api_text_completion
 from connectors.website.scrapers import scrape
 from utils.read_time_estimate import estimate_read_time
+from utils.llm_response_format import parse_bullet_points
 
 
 def scrape_and_process_content(url: str, scraper_type="basic"):
@@ -37,9 +38,10 @@ def scrape_and_process_content(url: str, scraper_type="basic"):
             return None
         
         # Step 2: Generate summary using LLM
-        summary = summarize_content(markdown_content)
+        raw_summary = summarize_content(markdown_content)
+        summary = parse_bullet_points(raw_summary) if raw_summary else None # Parse the summary into bullet points
         if not summary:
-            logger.warning(f"Failed to generate summary for {url}")
+            logger.warning(f"Failed to generate or parse summary for {url}")
         
         # Step 3: Estimate reading time
         read_time = estimate_read_time(markdown_content)
