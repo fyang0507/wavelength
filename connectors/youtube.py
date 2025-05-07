@@ -303,7 +303,7 @@ def get_latest_video_metadata(channel_id, api_key, duration_min=300):
         metadata = {
             'title': video_data['title'],
             'description': video_data['description'],
-            'published_at': datetime.strptime(video_data['publishedAt'], '%Y-%m-%dT%H:%M:%SZ').isoformat(),
+            'published_at': datetime.strptime(video_data['publishedAt'], '%Y-%m-%dT%H:%M:%SZ').date().isoformat(),
             'video_id': video_id,
             'url': f'https://www.youtube.com/watch?v={video_id}',
             'thumbnail_url': video_data['thumbnails']['default']['url'],
