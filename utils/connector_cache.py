@@ -26,7 +26,7 @@ class ConnectorCache:
         try:
             cache_path = self.get_cache_path(connector_type, identifier)
             with open(cache_path, 'w', encoding='utf-8') as f:
-                json.dump(data, f, ensure_ascii=False)
+                json.dump(data, f, ensure_ascii=False, indent=2)
             return True
         except Exception as e:
             logger.error(f"Error saving to cache: {e}")
