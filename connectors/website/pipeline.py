@@ -15,7 +15,82 @@ from . import gateway
 from . import content
 from typing import Dict, Any, Optional
 from utils.connector_cache import ConnectorCache
+import tomllib
+from functools import lru_cache
 
+@lru_cache(maxsize=None)
+def _load_website_configs() -> Dict[str, Any]:
+    """Loads website configurations from config/website.toml.
+    The result is cached, so the file is read and parsed only once.
+    Raises FileNotFoundError or tomllib.TOMLDecodeError if issues occur on first load.
+    """
+    try:
+        with open("config/website.toml", "rb") as f:
+            loaded_configs = tomllib.load(f)
+        logger.info(f"Successfully loaded website configurations from config/website.toml for {len(loaded_configs)} base URLs (cached).")
+        return loaded_configs
+    except FileNotFoundError:
+        logger.error("Configuration file config/website.toml not found. This error will be cached.")
+        raise # Re-raise for the first caller to handle; subsequent calls get cached error or result
+    except tomllib.TOMLDecodeError as e:
+        logger.error(f"Error decoding config/website.toml: {e}. This error will be cached.")
+        raise # Re-raise
+
+def get_validated_website_config(source_url: str, channel: str = "Unknown") -> Dict[str, str]:
+    """Retrieves and validates the scraper configuration for a given website source URL.
+
+    Args:
+        source_url: The URL of the website source.
+        channel: The name of the channel (for logging/error messages).
+
+    Returns:
+        A dictionary containing validated scraper parameters 
+        ('gateway_scraper_type', 'gateway_content_type', 'content_scraper_type').
+
+    Raises:
+        ValueError: If configuration is not found, incomplete, or source_url is invalid.
+    """
+    try:
+        all_website_configs = _load_website_configs()
+    except (FileNotFoundError, tomllib.TOMLDecodeError) as e:
+        # This path is taken if _load_website_configs re-raises an error on first load attempt.
+        raise ValueError(f"Critical error loading config/website.toml, cannot proceed for channel '{channel}': {e}")
+
+    if not source_url:
+        raise ValueError(f"Missing 'source_url' for channel '{channel}'. Cannot determine website configuration.")
+
+    base_url = gateway.get_base_url(source_url)
+    if not base_url:
+        raise ValueError(f"Could not determine base_url for source_url: '{source_url}' (channel: '{channel}').")
+
+    if not all_website_configs: # Handles case where file was found but was empty or became empty after a decode error handled by caching {} 
+        raise ValueError(f"Website configuration file config/website.toml is empty or unreadable. Cannot get config for base_url: '{base_url}' (channel: '{channel}').")
+
+    if base_url not in all_website_configs:
+        error_msg = f"No configuration found in config/website.toml for base_url: '{base_url}' (derived from source_url: {source_url} for channel: '{channel}')."
+        logger.error(error_msg)
+        raise ValueError(error_msg)
+    
+    scraper_params_for_site = all_website_configs[base_url]
+    
+    required_keys = ["gateway_scraper_type", "gateway_content_type", "content_scraper_type"]
+    missing_keys = [key for key in required_keys if key not in scraper_params_for_site]
+
+    if missing_keys:
+        error_msg = f"Configuration for base_url '{base_url}' in config/website.toml is missing keys: {missing_keys}. (Channel: '{channel}', Source: {source_url})"
+        logger.error(error_msg)
+        raise ValueError(error_msg)
+    
+    # Ensure returned dict only has the expected string values for scraper params
+    # This helps if the TOML file accidentally has other non-string data for these keys
+    validated_config = {
+        "gateway_scraper_type": str(scraper_params_for_site["gateway_scraper_type"]),
+        "gateway_content_type": str(scraper_params_for_site["gateway_content_type"]),
+        "content_scraper_type": str(scraper_params_for_site["content_scraper_type"])
+    }
+    
+    logger.debug(f"Validated website config for {channel} ({base_url}): {validated_config}")
+    return validated_config
 
 def generate_cache_key(channel: str) -> str:
     """
@@ -38,8 +113,7 @@ def generate_cache_key(channel: str) -> str:
 def check_latest_updates(
     channel: str, 
     source_url: str, 
-    gateway_scraper_type: str = "basic", 
-    gateway_content_type: str = "html", 
+    website_config: Dict[str, str],
     output_dir: str = "data/website", 
     debug: bool = False
 ) -> Optional[Dict[str, Any]]:
@@ -50,8 +124,8 @@ def check_latest_updates(
     Args:
         channel: Name of the channel
         source_url: URL of the content source (e.g., user profile, publication home)
-        gateway_scraper_type: Type of scraper to use for gateway page ("basic" or "playwright")
-        gateway_content_type: Content type for gateway analysis ("html" or "markdown")
+        website_config: Dictionary containing scraper configurations like 
+                        'gateway_scraper_type', 'gateway_content_type'.
         output_dir: Base directory to save output files
         debug: If True, save intermediary files for debugging
         
@@ -80,7 +154,7 @@ def check_latest_updates(
         # Step 2: Scrape source URL using gateway
         html_content, markdown_content, title = gateway.scrape(
             url=source_url,
-            scraper_type=gateway_scraper_type
+            scraper_type=website_config["gateway_scraper_type"]
         )
         
         if not markdown_content:
@@ -106,7 +180,7 @@ def check_latest_updates(
         latest_release = gateway.find_latest_release(
             markdown_content=markdown_content,
             html_content=html_content,
-            gateway_content_type=gateway_content_type
+            gateway_content_type=website_config["gateway_content_type"]
         )
         
         if not latest_release or 'url' not in latest_release:
@@ -125,7 +199,8 @@ def check_latest_updates(
             "type": "website",
             "published_at": latest_release['published_at'],
             "url": latest_release['url'],
-            "source_url": source_url
+            "source_url": source_url,
+            "content_scraper_type": latest_release.get('content_scraper_type', website_config["content_scraper_type"]),
         }
         
         # Cache the result
@@ -141,7 +216,7 @@ def check_latest_updates(
 
 def get_latest_update_details(
     channel: str,
-    content_scraper_type: str = "basic",
+    website_config: Dict[str, str],
     output_dir: str = "data/website",
     debug: bool = False
 ) -> Optional[Dict[str, Any]]:
@@ -150,7 +225,8 @@ def get_latest_update_details(
     
     Args:
         channel: Name of the website channel
-        content_scraper_type: Type of scraper to use for content page
+        website_config: Dictionary containing scraper configurations like 
+                        'gateway_scraper_type', 'gateway_content_type', 'content_scraper_type'.
         output_dir: Base directory to save output files
         debug: If True, save intermediary files for debugging
         
@@ -174,12 +250,13 @@ def get_latest_update_details(
             raise ValueError(error_msg)
             
         content_url = latest_update['url']
-        logger.info(f"Processing content for {channel} at URL: {content_url}")
+        # Get content_scraper_type from cache
+        logger.info(f"Processing content using {website_config['content_scraper_type']} scraper for {channel} at URL: {content_url}")
               
         # Step 5: Process the content of the latest URL
         content_result = content.scrape_and_process_content(
             url=content_url,
-            scraper_type=content_scraper_type
+            scraper_type=website_config["content_scraper_type"]
         )
         
         if not content_result:
@@ -213,56 +290,97 @@ def get_latest_update_details(
 
 def main():
     """Demonstrate the two-phase website content retrieval approach."""
-    # Example website channel
-    channel = "有数DataVision (36氪)"
-    source_url = "https://36kr.com/user/5294205"
-    gateway_scraper_type = "basic"
-    gateway_content_type = "html"
-    content_scraper_type = "playwright"
-    output_dir = "data/36kr"
+    # Example website channel from subscriptions.toml (conceptually)
+    # In a real scenario, this would come from iterating through subscriptions.toml
+    subscription_config = {
+        "channel": "有数DataVision (36氪)",
+        "source_url": "https://36kr.com/user/5294205",
+    }
+
+    # 1. Load all website configurations from config/website.toml
+    all_website_configs = _load_website_configs()
+    logger.info(f"Loaded all website configs: {all_website_configs}")
+
+    # 2. Get channel and source_url from the current subscription
+    channel = subscription_config.get("channel")
+    source_url = subscription_config.get("source_url")
+
+    if not channel or not source_url:
+        raise ValueError(f"Subscription entry is missing 'channel' or 'source_url': {subscription_config}")
+
+    # 3. Determine base_url
+    base_url = gateway.get_base_url(source_url)
+    if not base_url:
+        # This should ideally not happen if source_url is a valid URL
+        raise ValueError(f"Could not determine base_url for source_url: {source_url} from channel: {channel}")
+    logger.info(f"Determined base_url: {base_url} for source: {source_url}")
+
+    # 4. Get the scraper configuration for this specific base_url
+    if base_url not in all_website_configs:
+        error_msg = f"No configuration found in config/website.toml for base_url: '{base_url}' (derived from source_url: {source_url} for channel: '{channel}')."
+        logger.error(error_msg)
+        raise ValueError(error_msg)
+    
+    # This is the configuration dedicated to scraper parameters from config/website.toml
+    scraper_params_for_site = all_website_configs[base_url].copy()
+    logger.info(f"Loaded scraper parameters for base_url {base_url}: {scraper_params_for_site}")
+
+    # 5. Validate that essential scraper configuration keys are present IN THE LOADED SCRAPER PARAMS
+    required_keys = ["gateway_scraper_type", "gateway_content_type", "content_scraper_type"]
+    missing_keys = [key for key in required_keys if key not in scraper_params_for_site]
+
+    if missing_keys:
+        error_msg = f"Configuration for base_url '{base_url}' in config/website.toml is missing keys: {missing_keys}. (Channel: '{channel}', Source: {source_url})"
+        logger.error(error_msg)
+        raise ValueError(error_msg)
+    
+    output_dir = "data/36kr" # Placeholder for the example
     debug = True  # Enable debug mode for development testing
     
-    print(f"Demonstrating two-phase approach for website channel: {channel}")
+    logger.info(f"Demonstrating two-phase approach for website channel: {channel}")
+    logger.info(f"Using scraper parameters from config/website.toml for {base_url}: {scraper_params_for_site}")
     
     # PHASE 1: Check for updates
-    print("\n=== Phase 1: Check for updates ===")
-    print("In this phase, we scrape the gateway page to find the latest content URL.")
+    logger.info("\n=== Phase 1: Check for updates ===")
+    logger.info("In this phase, we scrape the gateway page to find the latest content URL.")
     latest_update = check_latest_updates(
         channel=channel,
         source_url=source_url,
-        gateway_scraper_type=gateway_scraper_type,
-        gateway_content_type=gateway_content_type,
+        website_config=scraper_params_for_site, # Pass the config from config/website.toml
         output_dir=output_dir,
         debug=debug
     )
     
     if not latest_update:
-        print("Failed to find latest content")
+        logger.error("Failed to find latest content")
         return
         
-    print(f"Found latest content URL: {latest_update['url']}")
-    print(f"Published: {latest_update['published_at']}")
+    logger.info(f"Found latest content URL: {latest_update['url']}")
+    logger.info(f"Published: {latest_update['published_at']}")
+    logger.info(f"Effective content_scraper_type for this update: {latest_update['content_scraper_type']}")
     
     # PHASE 2: Get full content details
-    print("\n=== Phase 2: Get full content details ===")
-    print("In this phase, we process and retrieve the full content details from the URL in cache.")
+    logger.info("\n=== Phase 2: Get full content details ===")
+    logger.info("In this phase, we process and retrieve the full content details from the URL in cache.")
     try:
         full_content = get_latest_update_details(
             channel=channel,
-            content_scraper_type=content_scraper_type,
+            website_config=scraper_params_for_site, # Pass the config from config/website.toml
             output_dir=output_dir,
             debug=debug
         )
         
         if not full_content:
-            print("Failed to retrieve content details")
+            logger.error("Failed to retrieve content details")
             return
             
-        print(f"Retrieved content: {full_content['title']}")
-        print(f"Reading time: {full_content['duration']}")
-        print(f"Summary: {full_content['summary'][:150]}...")
+        logger.info(f"Retrieved content: {full_content['title']}")
+        logger.info(f"Reading time: {full_content['duration']}")
+        logger.info(f"Summary: {full_content['summary'][:150]}...")
     except ValueError as e:
-        print(f"Error retrieving content details: {e}")
+        logger.error(f"Error retrieving content details: {e}")
+
+    logger.info("Demo finished.")
 
 
 if __name__ == "__main__":
