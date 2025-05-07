@@ -35,10 +35,10 @@ def setup_logging():
     # Add stdout handler for all levels with UTF-8 encoding
     logger.add(sys.stdout, level="INFO")
     
-    # Add file handler for ERROR and above with UTF-8 encoding
+    # Add file handler for WARNING and above with UTF-8 encoding
     logger.add(
         log_file,
-        level="ERROR",
+        level="WARNING",
         rotation="1 day",
         retention="1 week",
         format="{time:YYYY-MM-DD HH:mm:ss} | {level} | {module}:{function}:{line} | {message}",
