@@ -4,6 +4,7 @@ Script to crawl website content, generate a summary using LLM, and estimate read
 Combines functionality from website scraping, LLM summarization, and reading time estimation.
 """
 
+from connectors.website.parsers.base import BaseParser
 from utils.logging_config import logger
 import tomllib
 from pathlib import Path
@@ -15,25 +16,23 @@ from utils.llm_response_format import parse_bullet_points
 from typing import Optional, Dict, Any
 
 
-def scrape_and_process_content(url: str, scraper_type="basic", content_parser_name: Optional[str] = None) -> Optional[Dict[str, Any]]:
+def scrape_and_process_content(url: str, scraper_type: str, content_parser: str) -> Optional[Dict[str, Any]]:
     """
     Scrapes a website, parses the content, generates a summary, and estimates reading time.
     
     Args:
         url: The URL of the website to scrape
         scraper_type: The type of scraper to use ("basic" or "playwright")
-        content_parser_name: Optional name of the specific content parser module to use.
+        content_parser: Name of the parser to use (e.g., "36kr", "generic"). 
         
     Returns:
         dict: Dictionary containing the scraped content, summary, and read time, or None if error
     """
-    try:
-        effective_parser_display_name = content_parser_name if content_parser_name else "generic"
-        logger.info(f"Processing content for {url} using scraper: {scraper_type}, parser: {effective_parser_display_name}")
-        
+    try:        
         # Step 1: Scrape the content
         scraper = get_scraper(scraper_type)
         if not scraper:
+            logger.error(f"Failed to get scraper for type: {scraper_type} for url {url}")
             return None 
         
         html_content = scraper.scrape(url)
@@ -41,30 +40,30 @@ def scrape_and_process_content(url: str, scraper_type="basic", content_parser_na
             logger.error(f"Failed to scrape content from {url} using {scraper_type} scraper.")
             return None
 
-        # Determine parser and attempt to parse
-        parsed_data: Optional[Dict[str, str]] = None
-        parser_to_use_name = content_parser_name if content_parser_name else "generic"
-        
-        parser = get_parser(parser_to_use_name)
-        if parser:
-            try:
-                logger.info(f"Using '{parser_to_use_name}' parser instance's extract_content method for {url}.")
-                parsed_data = parser.extract_content(html_content)
-                if parsed_data:
-                    logger.success(f"Successfully parsed content using parser: {parser_to_use_name}")
-                else:
-                    logger.warning(f"Parser '{parser_to_use_name}' returned None for content from {url}.")
-            except Exception as e:
-                logger.error(f"Error calling '{parser_to_use_name}' parser's extract_content: {e}", exc_info=True)
-                parsed_data = None # Ensure it's None after exception
-        else:
-            logger.error(f"Could not get parser instance for '{parser_to_use_name}'. Cannot process content for {url}.")
-            # If the initial attempt to get a parser (specific or generic) failed, nothing more to do.
+        parser = get_parser(content_parser)
+        if not parser:
+            error_msg = f"Fatal: Could not get any parser instance {content_parser} for {url}."
+            logger.error(error_msg)
             return None
         
+        logger.info(f"Processing content for {url} using scraper: {scraper_type}, parser: {content_parser}")
+        
+        # Parse content using the obtained parser
+        parsed_data: Optional[Dict[str, str]] = None
+        try:
+            logger.info(f"Using '{content_parser}' parser instance's extract_content method for {url}.")
+            parsed_data = parser.extract_content(html_content)
+            if parsed_data:
+                logger.success(f"Successfully parsed content using parser: {content_parser}")
+            else:
+                logger.warning(f"Parser '{content_parser}' returned None for content from {url}.")
+        except Exception as e:
+            logger.error(f"Error calling '{content_parser}' parser's extract_content: {e}", exc_info=True)
+            # parsed_data will be None or its previous state. The critical check below handles it.
+
         # Ensure we have critical fields from parsed_data
-        if not parsed_data.get('title') or not parsed_data.get('content'):
-            logger.error(f"Critical data ('title' or 'content') missing from parser '{parser_to_use_name}' output for {url}. Got: {parsed_data}")
+        if not parsed_data or not parsed_data.get('title') or not parsed_data.get('content'):
+            logger.error(f"Critical data ('title' or 'content') missing from parser '{content_parser}' output for {url}. Parser returned: {parsed_data}")
             return None
             
         # Step 2: Generate summary using LLM
@@ -85,7 +84,7 @@ def scrape_and_process_content(url: str, scraper_type="basic", content_parser_na
             "read_time": read_time
         }
         
-        logger.success(f"Successfully processed content from {url} (Parser: {parser_to_use_name})")
+        logger.success(f"Successfully processed content from {url} (Parser: {content_parser})")
         logger.info(f"Title: {result['title']}")
         logger.info(f"Reading time: {result['read_time']}")
         
@@ -181,14 +180,14 @@ def main():
     result = scrape_and_process_content(
         url=target_url,
         scraper_type=scraper_to_use,
-        content_parser_name=parser_to_use
+        content_parser=parser_to_use # Pass the string name
     )
     
     if result:
         save_processed_content(result, output_dir=output_dir)
         logger.info(f"Article: {result['title']}")
         logger.info(f"Reading time: {result['read_time']}")
-        
+
         # Ensure summary is a string before slicing
         summary_display = result.get('summary', 'N/A')
         if not isinstance(summary_display, str):
