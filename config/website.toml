@@ -2,6 +2,6 @@
 # Default settings for the website connector
 
 ["https://36kr.com"]
-gateway_scraper_type = "basic"
+gateway_scraper_type = "playwright"
 gateway_content_type = "markdown" # html or markdown
 content_scraper_type = "playwright" 
