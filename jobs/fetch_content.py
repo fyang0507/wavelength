@@ -90,74 +90,73 @@ def fetch_content_by_type(content_request):
 
 def main():
     """Main function to fetch full content for all content requests."""
-    try:
-        # Define specific content request file path
-        content_request_path = "data/content_request_2025-05-07.json"
+
+    # Define specific content request file path
+    # Get today's date in the format YYYY-MM-DD
+    today = datetime.now().strftime("%Y-%m-%d")
+    content_request_path = f"data/content_request_{today}.json"
+    
+    # Get today's date for the output file
+    today = datetime.now().strftime("%Y-%m-%d")
+    raw_results_path = f"data/raw_results_{today}.json"
+    
+    logger.info("=" * 80)
+    logger.info("STARTING PHASE 2: DETAILED CONTENT RETRIEVAL")
+    logger.info("=" * 80)
+    
+    # Check if content request file exists
+    if not os.path.exists(content_request_path):
+        logger.error(f"Error: {content_request_path} does not exist.")
+        return
         
-        # Get today's date for the output file
-        today = datetime.now().strftime("%Y-%m-%d")
-        raw_results_path = f"data/raw_results_{today}.json"
+    # Load content requests
+    with open(content_request_path, 'r', encoding='utf-8') as f:
+        content_requests = json.load(f)
         
-        logger.info("=" * 80)
-        logger.info("STARTING PHASE 2: DETAILED CONTENT RETRIEVAL")
-        logger.info("=" * 80)
-        
-        # Check if content request file exists
-        if not os.path.exists(content_request_path):
-            logger.error(f"Error: {content_request_path} does not exist.")
-            return
-            
-        # Load content requests
-        with open(content_request_path, 'r', encoding='utf-8') as f:
-            content_requests = json.load(f)
-            
-        if not content_requests:
-            logger.info("No content requests found. Nothing to fetch.")
-            # Create an empty raw_results file to allow the pipeline to continue
-            with open(raw_results_path, 'w', encoding='utf-8') as f:
-                json.dump([], f, ensure_ascii=False, indent=2)
-            return
-            
-        logger.info(f"Found {len(content_requests)} content requests to process")
-        
-        # Process each content request
-        raw_results = []
-        success_count = 0
-        failure_count = 0
-        
-        for index, request in enumerate(content_requests, 1):
-            channel = request.get('channel', 'Unknown channel')
-            content_type = request.get('type', 'Unknown type')
-            
-            logger.info(f"Fetching content {index}/{len(content_requests)}: {channel} - {content_type}")
-            
-            # Fetch full content details
-            content_details = fetch_content_by_type(request)
-            
-            if content_details:
-                raw_results.append(content_details)
-                success_count += 1
-                logger.info(f"Successfully fetched content for {channel} - {content_type}")
-            else:
-                failure_count += 1
-                logger.warning(f"Failed to fetch content for {channel} - {content_type}")
-                
-        # Save raw results
+    if not content_requests:
+        logger.info("No content requests found. Nothing to fetch.")
+        # Create an empty raw_results file to allow the pipeline to continue
         with open(raw_results_path, 'w', encoding='utf-8') as f:
-            json.dump(raw_results, f, ensure_ascii=False, indent=2)
-            
-        logger.info("=" * 80)
-        logger.info(f"PHASE 2 RESULTS: Successfully fetched {success_count}/{len(content_requests)} content items")
+            json.dump([], f, ensure_ascii=False, indent=2)
+        return
         
-        if failure_count > 0:
-            logger.warning(f"Failed to fetch {failure_count} items")
-            
-        logger.info(f"Raw results saved to {raw_results_path}")
-        logger.info(f"Next step: Run preprocess.py to process the raw results")
-        logger.info("=" * 80)
+    logger.info(f"Found {len(content_requests)} content requests to process")
+    
+    # Process each content request
+    raw_results = []
+    success_count = 0
+    failure_count = 0
+    
+    for index, request in enumerate(content_requests, 1):
+        channel = request.get('channel', 'Unknown channel')
+        content_type = request.get('type', 'Unknown type')
         
-    except Exception as e:
-        logger.error(f"An error occurred during content fetching: {str(e)}")
+        logger.info(f"Fetching content {index}/{len(content_requests)}: {channel} - {content_type}")
+        
+        # Fetch full content details
+        content_details = fetch_content_by_type(request)
+        
+        if content_details:
+            raw_results.append(content_details)
+            success_count += 1
+            logger.info(f"Successfully fetched content for {channel} - {content_type}")
+        else:
+            failure_count += 1
+            logger.warning(f"Failed to fetch content for {channel} - {content_type}")
+            
+    # Save raw results
+    with open(raw_results_path, 'w', encoding='utf-8') as f:
+        json.dump(raw_results, f, ensure_ascii=False, indent=2)
+        
+    logger.info("=" * 80)
+    logger.info(f"PHASE 2 RESULTS: Successfully fetched {success_count}/{len(content_requests)} content items")
+    
+    if failure_count > 0:
+        logger.warning(f"Failed to fetch {failure_count} items")
+        
+    logger.info(f"Raw results saved to {raw_results_path}")
+    logger.info(f"Next step: Run preprocess.py to process the raw results")
+    logger.info("=" * 80)
 
 
 if __name__ == "__main__":
