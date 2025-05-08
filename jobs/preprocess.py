@@ -17,6 +17,7 @@ Part of the two-phase content retrieval workflow:
 
 import os
 import json
+import re
 from datetime import datetime
 # Import the logger from the centralized logging_config module
 from utils.logging_config import logger
@@ -94,6 +95,10 @@ def process_duration(raw_data):
     """Process and format duration from raw data."""
     iso_duration = raw_data.get('duration', '')
 
+    # Check if duration is already in human-readable format like "6m 2s" or "4 m 20 s"
+    if isinstance(iso_duration, str) and re.match(r'^\s*\d+\s*[hm]\s*(?:\d+\s*[ms])?\s*(?:\d+\s*s)?\s*$', iso_duration):
+        return iso_duration
+        
     # if duration is numerical, convert to human-readable format in minutes and seconds
     if isinstance(iso_duration, (int, str)) and str(iso_duration).isdigit():
         iso_duration = int(iso_duration)
@@ -223,7 +228,7 @@ def main():
     # Process each item in the raw results
     for index, item in enumerate(raw_results, 1):
         # Log the item being processed with progress status
-        logger.info(f"Processing item {index}/{len(raw_results)}: {item.get('channel', 'Unknown channel')} - {item.get('type', 'Unknown type')}")
+        logger.info(f"Processing item {index}/{len(raw_results)}: {item.get('channel')} - {item.get('type')}")
         
         processed_data = process_data(item)
         if processed_data:
