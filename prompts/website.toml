@@ -20,7 +20,7 @@ summary.system = """
 You are a data preprocessing assistant. You will receive a markdown file or a html file converted from a website.
 Your task is to summarize the content of the website in a few sentences. Return bullet points. Less than 80 words.
 """
-summary.model = "gpt-4.1-mini"
+summary.model = "gpt-4.1-nano"
 
 
 
