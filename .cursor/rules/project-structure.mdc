@@ -19,7 +19,14 @@ The [connectors/](mdc:connectors) directory contains individual connectors that 
 - [Bilibili](mdc:connectors/bilibili.py) - Bilibili video platform integration
 - [LLM](mdc:connectors/llm.py) - Language model integration
 - [Gist](mdc:connectors/gist.py) - GitHub Gist integration
-- [Website](mdc:connectors/website) - Website content extraction (Note: This is now a directory/module)
+- [Website](mdc:connectors/website) - Website content extraction. This module is further organized into:
+    - [Pipeline](mdc:connectors/website/pipeline.py) - Orchestrates website content retrieval using a two-phase approach (update checking and content detailing).
+    - [Parsers](mdc:connectors/website/parsers) - Contains specific parser implementations for different websites.
+        - [Generic Parser](mdc:connectors/website/parsers/generic.py) - A generic parser, often relying on LLMs.
+        - [36kr Parser](mdc:connectors/website/parsers/36kr.py) - Parser specific to 36kr.com.
+    - [Scrapers](mdc:connectors/website/scrapers) - Contains different scraping mechanisms.
+        - [Basic Scraper](mdc:connectors/website/scrapers/basic_scraper.py) - A simple scraper using HTTP requests.
+        - [Playwright Scraper](mdc:connectors/website/scrapers/playwright_scraper.py) - A scraper using Playwright for dynamic content.
 
 Each connector implements functionality to fetch and process data from its respective source.
 
