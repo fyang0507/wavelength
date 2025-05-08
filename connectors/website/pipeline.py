@@ -180,7 +180,8 @@ def get_latest_update_details(
         content_url = latest_update['url']
         content_result = content.scrape_and_process_content(
             url=latest_update['url'],
-            scraper_type=website_config["content_scraper"]
+            scraper_type=website_config["content_scraper"],
+            content_parser=website_config["content_parser"]
         )
         
         if not content_result:
@@ -206,7 +207,7 @@ def get_latest_update_details(
         return None
 
 
-def _prepare_website_processing_config(subscription_config: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+def prepare_website_processing_config(subscription_config: Dict[str, Any]) -> Optional[Dict[str, Any]]:
     """Prepares and validates necessary configurations for website processing.
 
     Args:
@@ -225,23 +226,11 @@ def _prepare_website_processing_config(subscription_config: Dict[str, Any]) -> O
         logger.error(f"Critical error loading config/website.toml: {e}")
         return None
 
-    # 2. Get channel and source_url from the current subscription
-    channel = subscription_config.get("channel")
+    # 2. Determine base_url
     source_url = subscription_config.get("source_url")
-
-    if not channel or not source_url:
-        logger.error(f"Subscription entry is missing 'channel' or 'source_url': {subscription_config}")
-        return None
-
-    # 3. Determine base_url
     base_url = extract_base_url(source_url)
-    if not base_url:
-        logger.error(f"Could not determine base_url for source_url: {source_url} from channel: {channel} using extract_base_url. Skipping this source.")
-        return None
-    
-    logger.info(f"Determined base_url: {base_url} for source: {source_url}")
 
-    # 4. Get the scraper configuration for this specific base_url   
+    # 3. Get the scraper configuration for this specific base_url   
     site_config = all_website_configs[base_url].copy()
     logger.info(f"Loaded scraper parameters for base_url {base_url}: {site_config}")
 
@@ -254,12 +243,7 @@ def _prepare_website_processing_config(subscription_config: Dict[str, Any]) -> O
         logger.error(error_msg)
         return None
 
-    return {
-        "channel": channel,
-        "source_url": source_url,
-        "site_config": site_config,
-        "base_url": base_url # Also pass base_url for logging if needed
-    }
+    return site_config
 
 
 def main():
@@ -271,19 +255,17 @@ def main():
         "source_url": "https://36kr.com/user/5294205",
     }
 
-    processing_params = _prepare_website_processing_config(subscription_config)
+    site_config = prepare_website_processing_config(subscription_config)
 
-    if not processing_params:
+    if not site_config:
         logger.error("Failed to prepare website processing configurations. Aborting demo.")
         return
 
-    channel = processing_params["channel"]
-    source_url = processing_params["source_url"]
-    site_config = processing_params["site_config"]
-    base_url = processing_params["base_url"]
+    channel = subscription_config["channel"]
+    source_url = subscription_config["source_url"]
     
     logger.info(f"Demonstrating two-phase approach for website channel: {channel}")
-    logger.info(f"Using scraper parameters from config/website.toml for {base_url}: {site_config}")
+    logger.info(f"Using scraper parameters from config/website.toml: {site_config}")
     
     # PHASE 1: Check for updates
     logger.info("\n=== Phase 1: Check for updates ===")
