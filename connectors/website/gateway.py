@@ -12,6 +12,9 @@ from pathlib import Path
 from connectors.llm import api_text_completion
 from urllib.parse import urlparse, urljoin
 from connectors.website.scrapers import scrape
+from typing import Optional, Dict, Any
+import importlib
+import types
 
 def get_base_url(url: str) -> str:
     """
@@ -44,7 +47,7 @@ def scrape(url: str, scraper_type="basic"):
         scraper_type: The type of scraper to use ("basic" or "playwright").
         
     Returns:
-        tuple: (html_content, markdown_content, title) or (None, None, None) if an error occurs
+        html content or None if an error occurs
     """
     try:
         logger.info(f"Attempting to fetch URL using {scraper_type} scraper: {url}")
@@ -54,135 +57,129 @@ def scrape(url: str, scraper_type="basic"):
         return scraper_func(url, scraper_type)
 
     except Exception as e:
-        logger.error(f"Failed to convert URL {url} to Markdown using {scraper_type} scraper: {e}")
-        return None, None, None
+        logger.error(f"Failed to scrape URL {url} using {scraper_type} scraper: {e}")
+        return None
 
 
-def find_latest_release(markdown_content, html_content, gateway_content_type="html"):
+def load_gateway_parser(gateway_parser_name: str) -> Optional[types.ModuleType]:
     """
-    Sends the content to LLM to find the latest release information.
-    
+    Dynamically imports a parser module from the connectors.website.parsers package.
     Args:
-        markdown_content: The markdown content to analyze
-        html_content: Optional HTML content if needed when content_type is "html"
-        gateway_content_type: The type of content to use ("html" or "markdown")
-        
+        gateway_parser_name: The name of the parser module (e.g., "parser_36kr").
     Returns:
-        dict: JSON object containing the latest release information
+        The loaded module object, or None if an error occurs.
     """
-    # Load the prompt from website.toml
+    if not gateway_parser_name:
+        logger.error("Parser module name cannot be empty for dynamic loading.")
+        return None
+    try:
+        module_path = f"connectors.website.parsers.{gateway_parser_name}"
+        module = importlib.import_module(module_path)
+        logger.info(f"Successfully loaded parser module: {module_path}")
+        return module
+    except ImportError:
+        logger.warning(f"Parser module '{module_path}' not found or caused an ImportError.")
+        return None # Return None on ImportError so fallback can be triggered
+    except Exception as e:
+        logger.error(f"An unexpected error occurred while loading parser module '{gateway_parser_name}': {e}", exc_info=True)
+        return None
+
+
+def _extract_with_llm(parsing_results: str, base_url: str) -> Optional[Dict[str, Any]]:
+    """
+    Uses LLM to find the latest release from the processed data.
+    """
+    logger.info("Finding latest release...")
+
     prompt_file_path = Path("prompts/website.toml")
     if not prompt_file_path.exists():
         logger.error(f"Prompt file not found: {prompt_file_path}")
         return None
         
-    # Use tomllib to read the TOML file (Python 3.11+)
     with open(prompt_file_path, "rb") as f:
         prompts = tomllib.load(f)
     
-    # Get the system prompt and model from the toml file
-    system_prompt = prompts['gateway']['system']
+    system_prompt = prompts['gateway']['system'].format(today=datetime.now().strftime('%Y-%m-%d'))
     model = prompts['gateway']['model']
-    
-    # Determine which content to use based on content_type
-    if gateway_content_type.lower() == "html" and html_content:
-        logger.info(f"Using HTML content for LLM analysis")
-        user_message = html_content
-    elif gateway_content_type.lower() == "markdown":
-        logger.info(f"Using Markdown content for LLM analysis")
-        user_message = markdown_content
-    else:
-        error_msg = f"Invalid gateway_content_type: {gateway_content_type}. Must be 'html' or 'markdown'"
-        logger.error(error_msg)
-        raise ValueError(error_msg)
         
-    logger.info(f"Sending {gateway_content_type} content to LLM (model: {model})")
-    
-    # Use the llm connector to get the response
     response = api_text_completion(
         model=model,
         system_prompt=system_prompt,
-        user_message=user_message
+        user_message=parsing_results
     )
     
-    # Parse the response as JSON
     try:
-        # Try to parse directly if response is already in JSON format
-        latest_release = json.loads(response)
-        if latest_release['published_at'] == 'N/A':
-            # Assign today's date when published date is not available
-            latest_release['published_at'] = datetime.now().strftime('%Y-%m-%d')
-            logger.success(f"Successfully found latest release: {latest_release}")
-            return latest_release
+        llm_result = json.loads(response)
+        if llm_result.get('published_at') == 'N/A':
+            llm_result['published_at'] = datetime.now().strftime('%Y-%m-%d')
+        
+        # Ensure URL from LLM is absolute
+        if 'url' in llm_result and not urlparse(llm_result['url']).scheme:
+            llm_result['url'] = urljoin(base_url, llm_result['url'])
+        
+        return llm_result
+    
     except json.JSONDecodeError:
-        raise ValueError(f"Failed to parse JSON from LLM response: {response[:200]}...")
+        logger.error(f"Failed to parse JSON from LLM response: {response[:200]}...")
+        return None # Changed from raising error to returning None for pipeline flow
+    except Exception as e:
+        logger.error(f"Error processing LLM response: {e}", exc_info=True)
+        return None
 
+
+def find_latest_release(url: str, scraper_type: str, gateway_parser_name: Optional[str] = None) -> Optional[Dict[str, Any]]:
+    """
+    Orchestrates fetching, parsing (specific or generic), and finding the latest release from a gateway URL.
+    """
+    base_url = get_base_url(url)
+    if not base_url:
+        # Error logged by get_base_url
+        return None
+
+    # Step 1: Scrape the website
+    html_content = scrape(url, scraper_type)
+    if not html_content:
+        # Error logged by scrape
+        return None
+
+    # Step 2: Dynamically load the parser module and parse the html content
+    if gateway_parser_name:
+        logger.info(f"Attempting to use specific parser '{gateway_parser_name}' for {url}.")
+        parser_mod = load_gateway_parser(gateway_parser_name)
+        if parser_mod:
+            try:
+                extract_catalogue = getattr(parser_mod, "extract_catalogue")
+                logger.info(f"Using '{gateway_parser_name}.extract_catalogue' for {url}.")
+                parsing_results = extract_catalogue(html_content, base_url)
+            except AttributeError:
+                logger.warning(f"Parser module '{gateway_parser_name}' does not have an 'extract_catalogue' function. Will fallback.")
+            except Exception as e:
+                logger.error(f"Error calling '{gateway_parser_name}.extract_catalogue': {e}", exc_info=True)
+    else:
+        logger.info(f"No specific gateway_parser_name provided for {url}. Will use generic parser.")
+        parser_mod = load_gateway_parser('generic')
+        extract_catalogue = getattr(parser_mod, "extract_catalogue")
+        parsing_results = extract_catalogue(html_content)
+
+    # Step 3: Use LLM to find the latest release from the parsing results
+    latest_release_info = _extract_with_llm(parsing_results, base_url)
+
+    return latest_release_info
 
 
 def main():
     """Main function with placeholder values."""
-    # Placeholder values (as requested)
-    target_url = "https://36kr.com/user/5294210"
-    scraper_type = "basic"
-    gateway_content_type = "html"
-    channel = "远川研究所"
-    output_dir = "data/36kr/gateway"
     
-    # Create output filenames
-    markdown_file = f"{output_dir}/demo.md"
-    html_file = f"{output_dir}/demo.html"
-
-    # Step 1: Get base URL
-    base_url = get_base_url(target_url)
-    if not base_url:
-        logger.error("Failed to extract base URL. Aborting.")
-        return
-    
-    # Step 2: Scrape website
-    html_content, markdown_content, title = scrape(
-        url=target_url, 
-        scraper_type=scraper_type,
+    # For main, we need to simulate gateway_parser_name that pipeline would get from config
+    latest_release_36kr = find_latest_release(
+        url="https://36kr.com/user/5294210",
+        scraper_type="playwright",
+        # gateway_parser_name="36kr",
     )
-    
-    if not markdown_content:
-        logger.error("Failed to scrape website content. Aborting.")
-        return
-    
-    # Step 3: Save both HTML and markdown content to files
-    try:
-        # Ensure directory exists
-        Path(output_dir).mkdir(parents=True, exist_ok=True)
-        
-        # Save markdown content
-        with open(markdown_file, 'w', encoding='utf-8') as f:
-            f.write(markdown_content)
-        logger.success(f"Saved markdown content to {markdown_file}")
-        
-        # Save HTML content
-        with open(html_file, 'w', encoding='utf-8') as f:
-            f.write(html_content)
-        logger.success(f"Saved HTML content to {html_file}")
-        
-    except Exception as e:
-        logger.error(f"Failed to save content: {e}")
-        return
-    
-    # Step 4: Find latest release information
-    latest_release = find_latest_release(
-        markdown_content=markdown_content,
-        html_content=html_content,
-        gateway_content_type=gateway_content_type
-    )
-
-    # Step 5: prepend base url to the url in the latest_release
-    if latest_release:
-        latest_release['url'] = urljoin(base_url, latest_release['url'])
-        latest_release['channel'] = channel
-
-        logger.info(f"Latest release information: {json.dumps(latest_release, indent=2, ensure_ascii=False)}")
-        logger.success(f"Gateway process complete. Latest release metadata captured.")
+    if latest_release_36kr:
+        logger.info(f"36kr - Latest release: {json.dumps(latest_release_36kr, indent=2, ensure_ascii=False)}")
     else:
-        logger.error("Failed to find latest release information.")
+        logger.error("36kr - Failed to find latest release information.")
 
 
 if __name__ == "__main__":

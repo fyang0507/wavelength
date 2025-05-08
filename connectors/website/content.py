@@ -11,53 +11,102 @@ from connectors.llm import api_text_completion
 from connectors.website.scrapers import scrape
 from utils.read_time_estimate import estimate_read_time
 from utils.llm_response_format import parse_bullet_points
+import importlib
+from typing import Optional
+import types
 
 
-def scrape_and_process_content(url: str, scraper_type="basic"):
+def load_content_parser(content_parser_name: str) -> Optional[types.ModuleType]:  # New function
     """
-    Scrapes a website, generates a summary, and estimates reading time.
+    Dynamically imports a content parser module from the connectors.website.parsers package.
+    Args:
+        content_parser_name: The name of the parser module (e.g., "parser_36kr_content").
+    Returns:
+        The loaded module object, or None if an error occurs.
+    """
+    if not content_parser_name:
+        logger.error("Content parser module name cannot be empty for dynamic loading.")
+        return None
+    try:
+        module_path = f"connectors.website.parsers.{content_parser_name}"
+        module = importlib.import_module(module_path)
+        logger.info(f"Successfully loaded content parser module: {module_path}")
+        return module
+    except ImportError:
+        logger.warning(f"Content parser module '{module_path}' not found or caused an ImportError.")
+        return None
+    except Exception as e:
+        logger.error(f"An unexpected error occurred while loading content parser module '{content_parser_name}': {e}", exc_info=True)
+        return None
+
+
+def scrape_and_process_content(url: str, scraper_type="basic", content_parser_name: Optional[str] = None):
+    """
+    Scrapes a website, parses the content, generates a summary, and estimates reading time.
     
     Args:
         url: The URL of the website to scrape
         scraper_type: The type of scraper to use ("basic" or "playwright")
+        content_parser_name: Optional name of the specific content parser module to use.
         
     Returns:
         dict: Dictionary containing the scraped content, summary, and read time, or None if error
     """
     try:
-        logger.info(f"Scraping content from {url} using {scraper_type} scraper")
+        logger.info(f"Scraping content from {url} using {scraper_type} scraper. Parser: {content_parser_name or 'generic'}")
         
-        # Step 1: Scrape website and convert to markdown
-        html_content, markdown_content, title = scrape(
+        # Step 1: Scrape website
+        html_content = scrape(
             url=url,
             scraper_type=scraper_type
         )
         
-        if not markdown_content:
+        if not html_content:
             logger.error(f"Failed to scrape content from {url}")
             return None
+
+        # Step 2: Parse the HTML content using the specified parser
+        if content_parser_name:
+            logger.info(f"Attempting to use specific content parser '{content_parser_name}' for {url}.")
+            parser_mod = load_content_parser(content_parser_name)
+            if parser_mod:
+                try:
+                    extract_content = getattr(parser_mod, "extract_content")
+                    logger.info(f"Using '{content_parser_name}.extract_content' for {url}.")
+                    parsed_data = extract_content(html_content)
+                    logger.success(f"Successfully parsed content using specific parser: {content_parser_name}")
+                except AttributeError:
+                    logger.warning(f"Specific parser module '{content_parser_name}' does not have 'extract_content' function. Falling back.")
+                except Exception as e:
+                    logger.error(f"Error calling '{content_parser_name}.extract_content': {e}. Falling back.", exc_info=True)
         
+        else:
+            logger.info(f"Using generic content parser for {url}.")
+            generic_parser_module = importlib.import_module("connectors.website.parsers.generic")
+            extract_content = getattr(generic_parser_module, "extract_content")
+            parsed_data = extract_content(html_content)
+
         # Step 2: Generate summary using LLM
-        raw_summary = summarize_content(markdown_content)
+        raw_summary = summarize_content(parsed_data['content'])
         summary = parse_bullet_points(raw_summary) if raw_summary else None # Parse the summary into bullet points
         if not summary:
             logger.warning(f"Failed to generate or parse summary for {url}")
         
         # Step 3: Estimate reading time
-        read_time = estimate_read_time(markdown_content)
+        read_time = estimate_read_time(parsed_data['content'])
         
         # Return all the processed data
         result = {
             "url": url,
-            "title": title,
+            "title": parsed_data['title'],
             "html_content": html_content,
-            "markdown_content": markdown_content,
+            "content": parsed_data['content'],
             "summary": summary,
             "read_time": read_time
         }
         
         logger.success(f"Successfully processed content from {url}")
-        logger.info(f"Title: {title}")
+        logger.info(f"Title: {parsed_data['title']}")
         logger.info(f"Reading time: {read_time}")
         
         return result
@@ -67,12 +116,12 @@ def scrape_and_process_content(url: str, scraper_type="basic"):
         return None
 
 
-def summarize_content(markdown_content):
+def summarize_content(content: str):
     """
     Generates a summary of the content using LLM.
     
     Args:
-        markdown_content: The markdown content to summarize
+        content: The content to summarize
         
     Returns:
         str: The summary text, or None if error
@@ -98,7 +147,7 @@ def summarize_content(markdown_content):
         response = api_text_completion(
             model=model,
             system_prompt=system_prompt,
-            user_message=markdown_content
+            user_message=content
         )
         
         logger.success(f"Successfully generated summary: {response}")
@@ -120,61 +169,56 @@ def save_processed_content(result, output_dir):
     Returns:
         bool: True if successful, False if error
     """
-    try:
-        # Create clean filename from title
-        if result["title"]:
-            filename = "".join(c if c.isalnum() or c in [' ', '_', '-'] else '_' for c in result["title"])
-            filename = filename.replace(' ', '_')[:50]  # Limit length
-        else:
-            import hashlib
-            filename = hashlib.md5(result["url"].encode()).hexdigest()[:10]
-        
-        # Ensure output directory exists
-        output_path = Path(output_dir)
-        output_path.mkdir(parents=True, exist_ok=True)
-        
-        # Save markdown content
-        markdown_path = output_path / f"{filename}.md"
-        with open(markdown_path, "w", encoding="utf-8") as f:
-            # Add metadata at the top of the file
-            f.write(f"# {result['title']}\n\n")
-            f.write(f"URL: {result['url']}\n")
-            f.write(f"Reading time: {result['read_time']}\n\n")
-            f.write("## Summary\n\n")
-            f.write(f"{result['summary']}\n\n")
-            f.write("## Content\n\n")
-            f.write(result['markdown_content'])
-        
-        # Save HTML content
-        html_path = output_path / f"{filename}.html"
-        with open(html_path, "w", encoding="utf-8") as f:
-            f.write(result['html_content'])
-        
-        logger.success(f"Content saved to {markdown_path} and {html_path}")
-        return True
-        
-    except Exception as e:
-        logger.error(f"Error saving processed content: {e}")
-        return False
+    # Create clean filename from title
+    if result["title"]:
+        filename = "".join(c if c.isalnum() or c in [' ', '_', '-'] else '_' for c in result["title"])
+        filename = filename.replace(' ', '_')[:50]  # Limit length
+    else:
+        import hashlib
+        filename = hashlib.md5(result["url"].encode()).hexdigest()[:10]
+    
+    # Ensure output directory exists
+    output_path = Path(output_dir)
+    output_path.mkdir(parents=True, exist_ok=True)
+    
+    # Save markdown content
+    markdown_path = output_path / f"{filename}.md"
+    with open(markdown_path, "w", encoding="utf-8") as f:
+        # Add metadata at the top of the file
+        f.write(f"# {result['title']}\n\n")
+        f.write(f"URL: {result['url']}\n")
+        f.write(f"Reading time: {result['read_time']}\n\n")
+        f.write("## Summary\n\n")
+        f.write(f"{result['summary']}\n\n")
+        f.write("## Content\n\n")
+        f.write(result['content'])
+    
+    # Save HTML content
+    html_path = output_path / f"{filename}.html"
+    with open(html_path, "w", encoding="utf-8") as f:
+        f.write(result['html_content'])
+    
+    logger.success(f"Content saved to {markdown_path} and {html_path}")
 
 
 def main():
     """Main function with placeholder values."""
     # Target URL to process
-    target_url = "https://36kr.com/p/3265228187942663"
-    scraper_type = "playwright"
+    target_url = "https://36kr.com/p/3232982907338757"
+    gate_way_scraper = "playwright"
+    content_parser = "36kr"
     output_dir = "data/36kr"
     
     # Process the content
     result = scrape_and_process_content(
         url=target_url,
-        scraper_type=scraper_type
+        scraper_type=gate_way_scraper,
+        content_parser_name=content_parser
     )
     
     if result:
         # Save the processed content
         save_processed_content(result, output_dir=output_dir)
-        
         # Display summary information
         logger.info(f"Article: {result['title']}")
         logger.info(f"Reading time: {result['read_time']}")
