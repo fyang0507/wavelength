@@ -8,39 +8,14 @@ from utils.logging_config import logger
 import tomllib
 from pathlib import Path
 from connectors.llm import api_text_completion
-from connectors.website.scrapers import scrape
+from connectors.website.scrapers import get_scraper
+from connectors.website.parsers import get_parser
 from utils.read_time_estimate import estimate_read_time
 from utils.llm_response_format import parse_bullet_points
-import importlib
-from typing import Optional
-import types
+from typing import Optional, Dict, Any
 
 
-def load_content_parser(content_parser_name: str) -> Optional[types.ModuleType]:  # New function
-    """
-    Dynamically imports a content parser module from the connectors.website.parsers package.
-    Args:
-        content_parser_name: The name of the parser module (e.g., "parser_36kr_content").
-    Returns:
-        The loaded module object, or None if an error occurs.
-    """
-    if not content_parser_name:
-        logger.error("Content parser module name cannot be empty for dynamic loading.")
-        return None
-    try:
-        module_path = f"connectors.website.parsers.{content_parser_name}"
-        module = importlib.import_module(module_path)
-        logger.info(f"Successfully loaded content parser module: {module_path}")
-        return module
-    except ImportError:
-        logger.warning(f"Content parser module '{module_path}' not found or caused an ImportError.")
-        return None
-    except Exception as e:
-        logger.error(f"An unexpected error occurred while loading content parser module '{content_parser_name}': {e}", exc_info=True)
-        return None
-
-
-def scrape_and_process_content(url: str, scraper_type="basic", content_parser_name: Optional[str] = None):
+def scrape_and_process_content(url: str, scraper_type="basic", content_parser_name: Optional[str] = None) -> Optional[Dict[str, Any]]:
     """
     Scrapes a website, parses the content, generates a summary, and estimates reading time.
     
@@ -53,147 +28,140 @@ def scrape_and_process_content(url: str, scraper_type="basic", content_parser_na
         dict: Dictionary containing the scraped content, summary, and read time, or None if error
     """
     try:
-        logger.info(f"Scraping content from {url} using {scraper_type} scraper. Parser: {content_parser_name or 'generic'}")
+        effective_parser_display_name = content_parser_name if content_parser_name else "generic"
+        logger.info(f"Processing content for {url} using scraper: {scraper_type}, parser: {effective_parser_display_name}")
         
-        # Step 1: Scrape website
-        html_content = scrape(
-            url=url,
-            scraper_type=scraper_type
-        )
+        # Step 1: Scrape the content
+        scraper = get_scraper(scraper_type)
+        if not scraper:
+            return None 
         
+        html_content = scraper.scrape(url)
         if not html_content:
-            logger.error(f"Failed to scrape content from {url}")
+            logger.error(f"Failed to scrape content from {url} using {scraper_type} scraper.")
             return None
 
-        # Step 2: Parse the HTML content using the specified parser
-        if content_parser_name:
-            logger.info(f"Attempting to use specific content parser '{content_parser_name}' for {url}.")
-            parser_mod = load_content_parser(content_parser_name)
-            if parser_mod:
-                try:
-                    extract_content = getattr(parser_mod, "extract_content")
-                    logger.info(f"Using '{content_parser_name}.extract_content' for {url}.")
-                    parsed_data = extract_content(html_content)
-                    logger.success(f"Successfully parsed content using specific parser: {content_parser_name}")
-                except AttributeError:
-                    logger.warning(f"Specific parser module '{content_parser_name}' does not have 'extract_content' function. Falling back.")
-                except Exception as e:
-                    logger.error(f"Error calling '{content_parser_name}.extract_content': {e}. Falling back.", exc_info=True)
+        # Determine parser and attempt to parse
+        parsed_data: Optional[Dict[str, str]] = None
+        parser_to_use_name = content_parser_name if content_parser_name else "generic"
         
+        parser = get_parser(parser_to_use_name)
+        if parser:
+            try:
+                logger.info(f"Using '{parser_to_use_name}' parser instance's extract_content method for {url}.")
+                parsed_data = parser.extract_content(html_content)
+                if parsed_data:
+                    logger.success(f"Successfully parsed content using parser: {parser_to_use_name}")
+                else:
+                    logger.warning(f"Parser '{parser_to_use_name}' returned None for content from {url}.")
+            except Exception as e:
+                logger.error(f"Error calling '{parser_to_use_name}' parser's extract_content: {e}", exc_info=True)
+                parsed_data = None # Ensure it's None after exception
         else:
-            logger.info(f"Using generic content parser for {url}.")
-            generic_parser_module = importlib.import_module("connectors.website.parsers.generic")
-            extract_content = getattr(generic_parser_module, "extract_content")
-            parsed_data = extract_content(html_content)
-
+            logger.error(f"Could not get parser instance for '{parser_to_use_name}'. Cannot process content for {url}.")
+            # If the initial attempt to get a parser (specific or generic) failed, nothing more to do.
+            return None
+        
+        # Ensure we have critical fields from parsed_data
+        if not parsed_data.get('title') or not parsed_data.get('content'):
+            logger.error(f"Critical data ('title' or 'content') missing from parser '{parser_to_use_name}' output for {url}. Got: {parsed_data}")
+            return None
+            
         # Step 2: Generate summary using LLM
         raw_summary = summarize_content(parsed_data['content'])
-        summary = parse_bullet_points(raw_summary) if raw_summary else None # Parse the summary into bullet points
+        summary = parse_bullet_points(raw_summary) if raw_summary else None
         if not summary:
             logger.warning(f"Failed to generate or parse summary for {url}")
         
         # Step 3: Estimate reading time
         read_time = estimate_read_time(parsed_data['content'])
         
-        # Return all the processed data
         result = {
             "url": url,
             "title": parsed_data['title'],
-            "html_content": html_content,
+            "html_content": html_content, # Still useful to save the raw HTML
             "content": parsed_data['content'],
             "summary": summary,
             "read_time": read_time
         }
         
-        logger.success(f"Successfully processed content from {url}")
-        logger.info(f"Title: {parsed_data['title']}")
-        logger.info(f"Reading time: {read_time}")
+        logger.success(f"Successfully processed content from {url} (Parser: {parser_to_use_name})")
+        logger.info(f"Title: {result['title']}")
+        logger.info(f"Reading time: {result['read_time']}")
         
         return result
         
     except Exception as e:
-        logger.error(f"Error processing content from {url}: {e}")
+        # Catch-all for unexpected errors in the main try block of scrape_and_process_content
+        logger.error(f"Overall error processing content from {url}: {e}", exc_info=True)
         return None
 
 
-def summarize_content(content: str):
+def summarize_content(content: str) -> Optional[str]:
     """
     Generates a summary of the content using LLM.
-    
     Args:
         content: The content to summarize
-        
     Returns:
         str: The summary text, or None if error
     """
     try:
-        # Load the prompt from website.toml
         prompt_file_path = Path("prompts/website.toml")
         if not prompt_file_path.exists():
             logger.error(f"Prompt file not found: {prompt_file_path}")
             return None
             
-        # Use tomllib to read the TOML file
         with open(prompt_file_path, "rb") as f:
             prompts = tomllib.load(f)
         
-        # Get the system prompt and model from the toml file
         system_prompt = prompts['summary']['system']
         model = prompts['summary']['model']
         
-        logger.info(f"Generating summary using LLM (model: {model})")
+        logger.info(f"Generating summary using LLM (model: {model}) for content snippet: {content[:100]}...")
         
-        # Use the llm connector to get the response
         response = api_text_completion(
             model=model,
             system_prompt=system_prompt,
             user_message=content
         )
         
-        logger.success(f"Successfully generated summary: {response}")
+        logger.success(f"Successfully generated summary.") # Removed response from log for brevity
         return response
     
     except Exception as e:
-        logger.error(f"Error generating summary: {e}")
+        logger.error(f"Error generating summary: {e}", exc_info=True)
         return None
 
 
 def save_processed_content(result, output_dir):
     """
     Saves processed content to files.
-    
     Args:
         result: Dictionary containing processed content
         output_dir: Directory to save files to
-        
     Returns:
         bool: True if successful, False if error
     """
-    # Create clean filename from title
     if result["title"]:
         filename = "".join(c if c.isalnum() or c in [' ', '_', '-'] else '_' for c in result["title"])
-        filename = filename.replace(' ', '_')[:50]  # Limit length
+        filename = filename.replace(' ', '_')[:50]
     else:
         import hashlib
         filename = hashlib.md5(result["url"].encode()).hexdigest()[:10]
     
-    # Ensure output directory exists
     output_path = Path(output_dir)
     output_path.mkdir(parents=True, exist_ok=True)
     
-    # Save markdown content
     markdown_path = output_path / f"{filename}.md"
     with open(markdown_path, "w", encoding="utf-8") as f:
-        # Add metadata at the top of the file
         f.write(f"# {result['title']}\n\n")
         f.write(f"URL: {result['url']}\n")
         f.write(f"Reading time: {result['read_time']}\n\n")
         f.write("## Summary\n\n")
-        f.write(f"{result['summary']}\n\n")
+        f.write(f"{result.get('summary', 'N/A')}\n\n") # Use .get for summary
         f.write("## Content\n\n")
         f.write(result['content'])
     
-    # Save HTML content
     html_path = output_path / f"{filename}.html"
     with open(html_path, "w", encoding="utf-8") as f:
         f.write(result['html_content'])
@@ -203,26 +171,29 @@ def save_processed_content(result, output_dir):
 
 def main():
     """Main function with placeholder values."""
-    # Target URL to process
     target_url = "https://36kr.com/p/3232982907338757"
-    gate_way_scraper = "playwright"
-    content_parser = "36kr"
+    scraper_to_use = "playwright"
+    parser_to_use = "36kr" 
     output_dir = "data/36kr"
     
-    # Process the content
+    logger.info(f"Running main content processing for URL: {target_url}, Scraper: {scraper_to_use}, Parser: {parser_to_use if parser_to_use else 'generic'}")
+    
     result = scrape_and_process_content(
         url=target_url,
-        scraper_type=gate_way_scraper,
-        content_parser_name=content_parser
+        scraper_type=scraper_to_use,
+        content_parser_name=parser_to_use
     )
     
     if result:
-        # Save the processed content
         save_processed_content(result, output_dir=output_dir)
-        # Display summary information
         logger.info(f"Article: {result['title']}")
         logger.info(f"Reading time: {result['read_time']}")
-        logger.info(f"Summary: {result['summary'][:150]}...")
+        
+        # Ensure summary is a string before slicing
+        summary_display = result.get('summary', 'N/A')
+        if not isinstance(summary_display, str):
+            summary_display = str(summary_display)
+        logger.info(f"Summary: {summary_display[:150]}...")
     else:
         logger.error(f"Failed to process content from {target_url}")
 

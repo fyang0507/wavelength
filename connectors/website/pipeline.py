@@ -9,13 +9,13 @@ Phase 2: Process and retrieve the full content details when needed (get_latest_u
 """
 
 from utils.logging_config import logger
-import os
 from connectors.website import gateway
 from connectors.website import content
 from typing import Dict, Any, Optional
 from utils.connector_cache import ConnectorCache
 import tomllib
 from functools import lru_cache
+from utils.url_utils import extract_base_url
 
 @lru_cache(maxsize=None)
 def _load_website_configs() -> Dict[str, Any]:
@@ -60,16 +60,39 @@ def check_latest_updates(
     website_config: Dict[str, str],
 ) -> Optional[Dict[str, Any]]:
     """
-    Phase 1: Check for updates from a website source by scraping the gateway page and finding latest content URL.
-    Stores the result in cache for later retrieval.
-    
+    Checks a website source for its latest content update and caches the findings.
+
+    This function represents Phase 1 of the content retrieval pipeline. It accesses
+    the provided `source_url` (e.g., a blog's homepage, an author's profile page)
+    to identify the URL and publication metadata of the most recent article or content item.
+    The specific method for finding this latest item (scraping, parsing, LLM extraction)
+    is determined by the `website_config`.
+
+    The information about the latest update, including its URL and publication time,
+    is stored in a cache associated with the `channel`. This cached data is intended
+    to be used by `get_latest_update_details` (Phase 2) to fetch the full content.
+
     Args:
-        channel: Name of the channel
-        source_url: URL of the content source (e.g., user profile, publication home)
-        website_config: Dictionary containing scraper configurations like 
-                        'gateway_scraper', 'gateway_parser', 'content_scraper'.
+        channel (str): A unique name identifying the website channel (e.g., "My Favorite Blog").
+                       Used for caching and logging.
+        source_url (str): The URL of the gateway page to check for updates (e.g.,
+                          a news site's homepage, a user's profile).
+        website_config (Dict[str, str]): A dictionary specifying the configuration
+                                         for this website. Essential keys include:
+                                         - 'gateway_scraper': Type of scraper for the gateway page.
+                                         - 'gateway_parser': Name of the parser for the gateway page
+                                                           (can be generic for LLM-based parsing).
+
     Returns:
-        Dict containing metadata about the latest content update including URL, or None if error
+        Optional[Dict[str, Any]]: A dictionary containing metadata about the latest update
+        if one is found and successfully processed. The dictionary includes:
+        - "channel" (str): The input channel name.
+        - "type" (str): Always "website".
+        - "published_at" (str): Publication timestamp of the latest content.
+        - "url" (str): The absolute URL of the latest content item.
+        - "source_url" (str): The input source_url.
+        Returns None if no update is found, if the gateway page cannot be processed,
+        or if essential information (like the latest content URL) is missing.
     """
     # Initialize cache
     cache = ConnectorCache()
@@ -82,36 +105,24 @@ def check_latest_updates(
     latest_article_info = gateway.find_latest_release(
         url=source_url,
         scraper_type=website_config["gateway_scraper"],
-        gateway_parser_name=website_config.get("gateway_parser") # This can be None if generic LLM parsing is intended
+        gateway_parser_name=website_config.get("gateway_parser") # This can be None if generic markdownify parsing is intended
     )
 
     if not latest_article_info:
         logger.warning(f"gateway.find_latest_release returned no information for {source_url}. Channel: '{channel}'.")
         return None
-    
-    latest_article_url = latest_article_info.get('url')
-    # gateway.find_latest_release (via _extract_with_llm) returns 'published_at'
-    latest_article_published_at = latest_article_info.get('published_at') 
-
-    if not latest_article_url:
-        logger.error(f"Latest article info from gateway.find_latest_release for channel '{channel}' is missing a URL. Data: {latest_article_info}")
-        return None
-    
-    # URL from find_latest_release should already be absolute.
-    logger.info(f"Latest content URL identified by gateway.find_latest_release for '{channel}': {latest_article_url}")
 
     # Prepare result for caching and return
     result = {
         "channel": channel,
         "type": "website",
-        "published_at": latest_article_published_at, # Use 'published_at' consistently
-        "url": latest_article_url,
+        "published_at": latest_article_info.get('published_at'),
+        "url": latest_article_info.get('url'),
         "source_url": source_url,
-        "content_scraper": website_config["content_scraper"], # This is for the *next* phase
     }
     
     # Cache the result
-    cache.save("website_updates", cache_key, result)
+    cache.save("website", cache_key, result)
     
     logger.success(f"Successfully found and cached latest content info for {channel}")
     return result
@@ -122,17 +133,36 @@ def get_latest_update_details(
     website_config: Dict[str, str],
 ) -> Optional[Dict[str, Any]]:
     """
-    Phase 2: Process and retrieve the full content details based on cached update information.
-    
+    Retrieves and processes the full details of the latest content update for a channel.
+
+    This function represents Phase 2 of the content retrieval pipeline. It assumes that
+    `check_latest_updates` (Phase 1) has already run for the given `channel` and
+    cached url about the latest content to be retrieved.
+
+    This function then scrapes and processes that URL to extract the full content details 
+    (title, summary, estimated read time). The `content_scraper` specified in the
+    `website_config` is used for this purpose.
+
     Args:
-        channel: Name of the website channel
-        website_config: Dictionary containing scraper configurations like 
-                        'gateway_scraper', 'gateway_parser', 'content_scraper'.
+        channel (str): The unique name of the website channel, matching the one used
+                       in `check_latest_updates`. Used to load cached data.
+        website_config (Dict[str, str]): A dictionary containing the website's
+                                         configuration. The key 'content_scraper'
+                                         is used to determine how to fetch the
+                                         actual content page.
+
     Returns:
-        Dict containing complete metadata and content, or None if error
-        
-    Raises:
-        ValueError: If no update information is found in cache
+        Optional[Dict[str, Any]]: A dictionary containing the full details of the
+        latest content if successfully retrieved and processed. The dictionary includes:
+        - "title" (str): The title of the content.
+        - "channel" (str): The input channel name.
+        - "type" (str): Always "website".
+        - "published_at" (str): Publication timestamp (from cached Phase 1 data).
+        - "url" (str): The URL of the content (from cached Phase 1 data).
+        - "duration" (str): Estimated read time of the content.
+        - "summary" (str): A summary of the content.
+        Returns None if the cached update information is not found, if the content
+        URL cannot be scraped, or if content processing fails.
     """
     try:
         # Initialize cache
@@ -140,20 +170,16 @@ def get_latest_update_details(
         cache_key = generate_cache_key(channel)
         
         # Try to get latest update information from cache
-        latest_update = cache.load("website_updates", cache_key)
+        latest_update = cache.load("website", cache_key)
         
         if not latest_update or 'url' not in latest_update:
-            error_msg = f"No update information found in cache for website channel {channel}"
-            logger.error(error_msg)
-            raise ValueError(error_msg)
+            logger.error(f"No update information found in cache for website channel {channel}")
+            return None
             
+        # Process the content of the latest URL
         content_url = latest_update['url']
-        # Get content_scraper from cache
-        logger.info(f"Processing content using {website_config['content_scraper']} scraper for {channel} at URL: {content_url}")
-              
-        # Step 5: Process the content of the latest URL
         content_result = content.scrape_and_process_content(
-            url=content_url,
+            url=latest_update['url'],
             scraper_type=website_config["content_scraper"]
         )
         
@@ -208,23 +234,19 @@ def _prepare_website_processing_config(subscription_config: Dict[str, Any]) -> O
         return None
 
     # 3. Determine base_url
-    base_url = gateway.get_base_url(source_url)
+    base_url = extract_base_url(source_url)
     if not base_url:
-        logger.error(f"Could not determine base_url for source_url: {source_url} from channel: {channel}")
-        return None
-    logger.info(f"Determined base_url: {base_url} for source: {source_url}")
-
-    # 4. Get the scraper configuration for this specific base_url
-    if base_url not in all_website_configs:
-        error_msg = f"No configuration found in config/website.toml for base_url: '{base_url}' (derived from source_url: {source_url} for channel: '{channel}')."
-        logger.error(error_msg)
+        logger.error(f"Could not determine base_url for source_url: {source_url} from channel: {channel} using extract_base_url. Skipping this source.")
         return None
     
+    logger.info(f"Determined base_url: {base_url} for source: {source_url}")
+
+    # 4. Get the scraper configuration for this specific base_url   
     site_config = all_website_configs[base_url].copy()
     logger.info(f"Loaded scraper parameters for base_url {base_url}: {site_config}")
 
     # 5. Validate that essential scraper configuration keys are present
-    required_keys = ["gateway_scraper", "content_scraper", "gateway_parser"]
+    required_keys = ["gateway_scraper", "content_scraper", "gateway_parser", "content_parser"]
     missing_keys = [key for key in required_keys if key not in site_config]
 
     if missing_keys:
@@ -278,7 +300,6 @@ def main():
         
     logger.info(f"Found latest content URL: {latest_update['url']}")
     logger.info(f"Published: {latest_update['published_at']}")
-    logger.info(f"Effective content_scraper for this update: {latest_update['content_scraper']}")
     
     # PHASE 2: Get full content details
     logger.info("\n=== Phase 2: Get full content details ===")
