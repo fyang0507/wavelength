@@ -80,7 +80,7 @@ def estimate_read_time(
     mins = int(total_secs // 60)
     secs = int(round(total_secs % 60))
 
-    return f"{mins} m {secs} s"
+    return f"{mins}m {secs}s"
 
 
 if __name__ == "__main__":
