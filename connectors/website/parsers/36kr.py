@@ -214,10 +214,10 @@ def _test_extract_content():
 
 
 def main():
-    logger.info("Starting Part 1: Test Kr36Parser.extract_catalogue method...")
+    logger.info("Part 1: Test Kr36Parser.extract_catalogue method...")
     _test_extract_catalogue()
     logger.info("\n" + "="*50 + "\n")
-    logger.info("Starting Part 2: Test Kr36Parser.extract_content method...")
+    logger.info("Part 2: Test Kr36Parser.extract_content method...")
     _test_extract_content()
 
 if __name__ == "__main__":
