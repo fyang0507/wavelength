@@ -4,8 +4,8 @@ Module for website scraping functions.
 Provides a unified interface for different scraping implementations.
 """
 
-from .basic import scrape as basic_scrape
-from .playwright import scrape as playwright_scrape
+from .basic_scraper import scrape as basic_scrape
+from .playwright_scraper import scrape as playwright_scrape
 
 def scrape(url: str, scraper_type="basic"):
     """
