@@ -19,7 +19,7 @@ from connectors.youtube import get_latest_update_details as youtube_get_details
 from connectors.podcast import get_latest_update_details as podcast_get_details
 from connectors.bilibili import get_latest_update_details as bilibili_get_details
 from connectors.website.pipeline import get_latest_update_details as website_get_details
-from connectors.website.pipeline import get_validated_website_config
+from connectors.website.pipeline import prepare_website_processing_config
 
 def fetch_content_by_type(content_request):
     """
@@ -32,7 +32,7 @@ def fetch_content_by_type(content_request):
         dict: Full content details or None if retrieval fails
     """
     content_type = content_request.get('type')
-    channel = content_request.get('channel', 'Unknown channel')
+    channel = content_request.get('channel')
     
     logger.info(f"Fetching content for {content_type}:{channel}")
     
@@ -58,20 +58,18 @@ def fetch_content_by_type(content_request):
             
         elif content_type == 'website':
             source_url = content_request.get('source_url')
-            # 'channel' is already extracted earlier in this function.
-
             if not source_url:
                 logger.error(f"Missing 'source_url' in content_request for website channel: {channel}. Cannot fetch content.")
                 return None
             
             try:
                 # Use the new centralized function to get validated config
-                scraper_params_for_site = get_validated_website_config(source_url=source_url, channel=channel)
-                logger.info(f"Using validated scraper config for {channel} (fetch phase): {scraper_params_for_site}")
+                website_config = prepare_website_processing_config(content_request)
+                logger.info(f"Using validated scraper config for {channel} (fetch phase): {website_config}")
 
                 return website_get_details(
                     channel=channel,
-                    website_config=scraper_params_for_site,
+                    website_config=website_config,
                 )
             except ValueError as e:
                 # Errors from get_validated_website_config (e.g., config not found, incomplete) are caught here
@@ -95,14 +93,7 @@ def main():
     # Get today's date in the format YYYY-MM-DD
     today = datetime.now().strftime("%Y-%m-%d")
     content_request_path = f"data/content_request_{today}.json"
-    
-    # Get today's date for the output file
-    today = datetime.now().strftime("%Y-%m-%d")
     raw_results_path = f"data/raw_results_{today}.json"
-    
-    logger.info("=" * 80)
-    logger.info("STARTING PHASE 2: DETAILED CONTENT RETRIEVAL")
-    logger.info("=" * 80)
     
     # Check if content request file exists
     if not os.path.exists(content_request_path):
@@ -128,8 +119,8 @@ def main():
     failure_count = 0
     
     for index, request in enumerate(content_requests, 1):
-        channel = request.get('channel', 'Unknown channel')
-        content_type = request.get('type', 'Unknown type')
+        channel = request.get('channel')
+        content_type = request.get('type')
         
         logger.info(f"Fetching content {index}/{len(content_requests)}: {channel} - {content_type}")
         
@@ -148,15 +139,13 @@ def main():
     with open(raw_results_path, 'w', encoding='utf-8') as f:
         json.dump(raw_results, f, ensure_ascii=False, indent=2)
         
-    logger.info("=" * 80)
-    logger.info(f"PHASE 2 RESULTS: Successfully fetched {success_count}/{len(content_requests)} content items")
+    logger.info(f"Raw results saved to {raw_results_path}")
     
     if failure_count > 0:
         logger.warning(f"Failed to fetch {failure_count} items")
-        
-    logger.info(f"Raw results saved to {raw_results_path}")
-    logger.info(f"Next step: Run preprocess.py to process the raw results")
-    logger.info("=" * 80)
+        logger.info(f"fetched {success_count}/{len(content_requests)} content items")
+    else:
+        logger.success(f"Successfully fetched {success_count}/{len(content_requests)} content items")
 
 
 if __name__ == "__main__":
