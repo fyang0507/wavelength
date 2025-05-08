@@ -15,7 +15,7 @@ from connectors.youtube import check_latest_updates as youtube_check_updates
 from connectors.podcast import check_latest_updates as podcast_check_updates
 from connectors.bilibili import check_latest_updates as bilibili_check_updates
 from connectors.website.pipeline import check_latest_updates as website_check_updates
-from connectors.website.pipeline import get_validated_website_config
+from connectors.website.pipeline import prepare_website_processing_config
 import json
 from datetime import datetime
 import pathlib
@@ -130,13 +130,11 @@ def process_websites(websites):
         logger.info(f"Processing website subscription: {channel} ({source_url})")
         
         try:
-            scraper_params_for_site = get_validated_website_config(source_url=source_url, channel=channel)
-            logger.info(f"Using validated scraper config for {channel}: {scraper_params_for_site}")
-
+            website_config = prepare_website_processing_config(website_subscription)
             update_info = website_check_updates(
                 channel=channel,
                 source_url=source_url,
-                website_config=scraper_params_for_site 
+                website_config=website_config
             )
             
             if update_info:

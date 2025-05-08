@@ -63,7 +63,6 @@ def fetch_content_by_type(content_request):
                 return None
             
             try:
-                # Use the new centralized function to get validated config
                 website_config = prepare_website_processing_config(content_request)
                 logger.info(f"Using validated scraper config for {channel} (fetch phase): {website_config}")
 
