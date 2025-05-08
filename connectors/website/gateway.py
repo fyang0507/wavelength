@@ -70,53 +70,52 @@ def find_latest_release(markdown_content, html_content, gateway_content_type="ht
     Returns:
         dict: JSON object containing the latest release information
     """
+    # Load the prompt from website.toml
+    prompt_file_path = Path("prompts/website.toml")
+    if not prompt_file_path.exists():
+        logger.error(f"Prompt file not found: {prompt_file_path}")
+        return None
+        
+    # Use tomllib to read the TOML file (Python 3.11+)
+    with open(prompt_file_path, "rb") as f:
+        prompts = tomllib.load(f)
+    
+    # Get the system prompt and model from the toml file
+    system_prompt = prompts['gateway']['system']
+    model = prompts['gateway']['model']
+    
+    # Determine which content to use based on content_type
+    if gateway_content_type.lower() == "html" and html_content:
+        logger.info(f"Using HTML content for LLM analysis")
+        user_message = html_content
+    elif gateway_content_type.lower() == "markdown":
+        logger.info(f"Using Markdown content for LLM analysis")
+        user_message = markdown_content
+    else:
+        error_msg = f"Invalid gateway_content_type: {gateway_content_type}. Must be 'html' or 'markdown'"
+        logger.error(error_msg)
+        raise ValueError(error_msg)
+        
+    logger.info(f"Sending {gateway_content_type} content to LLM (model: {model})")
+    
+    # Use the llm connector to get the response
+    response = api_text_completion(
+        model=model,
+        system_prompt=system_prompt,
+        user_message=user_message
+    )
+    
+    # Parse the response as JSON
     try:
-        # Load the prompt from website.toml
-        prompt_file_path = Path("prompts/website.toml")
-        if not prompt_file_path.exists():
-            logger.error(f"Prompt file not found: {prompt_file_path}")
-            return None
-            
-        # Use tomllib to read the TOML file (Python 3.11+)
-        with open(prompt_file_path, "rb") as f:
-            prompts = tomllib.load(f)
-        
-        # Get the system prompt and model from the toml file
-        system_prompt = prompts['gateway']['system']
-        model = prompts['gateway']['model']
-        
-        # Determine which content to use based on content_type
-        if gateway_content_type.lower() == "html" and html_content:
-            logger.info(f"Using HTML content for LLM analysis")
-            user_message = html_content
-        elif gateway_content_type.lower() == "markdown":
-            logger.info(f"Using Markdown content for LLM analysis")
-            user_message = markdown_content
-        else:
-            error_msg = f"Invalid gateway_content_type: {gateway_content_type}. Must be 'html' or 'markdown'"
-            logger.error(error_msg)
-            raise ValueError(error_msg)
-            
-        logger.info(f"Sending {gateway_content_type} content to LLM (model: {model})")
-        
-        # Use the llm connector to get the response
-        response = api_text_completion(
-            model=model,
-            system_prompt=system_prompt,
-            user_message=user_message
-        )
-        
-        # Parse the response as JSON
-        try:
-            # Try to parse directly if response is already in JSON format
-            latest_release = json.loads(response)
-            if latest_release['published_at'] == 'N/A':
-                # Assign today's date when published date is not available
-                latest_release['published_at'] = datetime.now().strftime('%Y-%m-%d')
+        # Try to parse directly if response is already in JSON format
+        latest_release = json.loads(response)
+        if latest_release['published_at'] == 'N/A':
+            # Assign today's date when published date is not available
+            latest_release['published_at'] = datetime.now().strftime('%Y-%m-%d')
             logger.success(f"Successfully found latest release: {latest_release}")
             return latest_release
-        except json.JSONDecodeError:
-            raise ValueError(f"Failed to parse JSON from LLM response: {response[:200]}...")
+    except json.JSONDecodeError:
+        raise ValueError(f"Failed to parse JSON from LLM response: {response[:200]}...")
 
 
 
