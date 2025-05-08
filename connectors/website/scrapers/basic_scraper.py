@@ -7,8 +7,7 @@ Provides basic scraping functionality for sites without anti-bot protection.
 import requests
 from pathlib import Path
 from utils.logging_config import logger
-from urllib.parse import urlparse
-from .utils import parse_html_to_markdown
+from typing import Optional
 
 
 def fetch_webpage(url: str):
@@ -47,66 +46,53 @@ def fetch_webpage(url: str):
         return None, None
 
 
-def scrape(url: str):
+def scrape(url: str) -> Optional[str]:
     """
-    Scrapes a website using requests and converts content to Markdown.
+    Scrapes a website using requests and returns the HTML content.
     
     Args:
         url: URL to scrape
         
     Returns:
-        tuple: (html_content, markdown_content, title) or (None, None, None) if an error occurs
+        str: HTML content as a string, or None if an error occurs.
     """
     try:
         # Step 1: Fetch HTML content
         html_content, status_code = fetch_webpage(url)
         
         if not html_content:
-            return None, None, None
+            logger.warning(f"No HTML content fetched from {url} by basic scraper.")
+            return None
             
-        # Step 2: Parse HTML to Markdown
-        markdown_content, title = parse_html_to_markdown(html_content)
-        
-        if not markdown_content:
-            return html_content, None, None
-        
-        return html_content, markdown_content, title
+        # Step 2: Just return the HTML content
+        return html_content
             
     except Exception as e:
-        logger.error(f"Error scraping {url}: {e}")
-        return None, None, None
+        logger.error(f"Error in basic scrape for {url}: {e}", exc_info=True)
+        return None
 
 
 def main():
     """Main function with placeholder values."""
     # Target URL from the user
     target_url = "https://36kr.com/user/5294208"
-    output_dir = "data/36kr/basic"
+    output_dir = "data/36kr"
     
     # Ensure output directory exists
     Path(output_dir).mkdir(parents=True, exist_ok=True)
         
-    output_filepath = Path(output_dir) / f"demo_basic.md"
-    html_path = str(output_filepath).replace('.md', '.html')
+    html_path = Path(output_dir) / f"demo_basic_scraper.html"
     
     # Scrape website
-    html_content, markdown_content, title = scrape(
+    html_content = scrape(
         url=target_url
     )
     
-    if markdown_content:
+    if html_content:
         # Save HTML
         with open(html_path, 'w', encoding='utf-8') as f:
             f.write(html_content)
         logger.success(f"Saved HTML content to {html_path}")
-        
-        # Save Markdown
-        with open(output_filepath, 'w', encoding='utf-8') as f:
-            f.write(markdown_content)
-        logger.success(f"Saved Markdown content to {output_filepath}")
-        
-        logger.success(f"Successfully scraped article: {title}")
-        logger.info(f"Content saved to {output_dir}")
     else:
         logger.error("Failed to scrape the website.")
 

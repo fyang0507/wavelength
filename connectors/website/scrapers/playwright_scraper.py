@@ -7,7 +7,7 @@ Designed to bypass protection mechanisms by using a headless browser.
 from pathlib import Path
 from utils.logging_config import logger
 import random
-from .utils import parse_html_to_markdown
+from typing import Optional
 
 
 async def simulate_browser(url: str):
@@ -110,36 +110,32 @@ async def simulate_browser(url: str):
         logger.error(f"Error simulating browser for {url}: {e}")
         return None, None
 
-async def scrape_with_playwright(url: str):
+async def scrape_with_playwright(url: str) -> Optional[str]:
     """
-    Scrapes a website using Playwright to bypass anti-bot protection.
+    Scrapes a website using Playwright and returns the HTML content.
     
     Args:
         url: URL to scrape
         
     Returns:
-        tuple: (html_content, markdown_content, title) or (None, None, None) if an error occurs
+        str: HTML content as a string, or None if an error occurs
     """
     try:
         # Step 1: Simulate browser to get HTML content
-        html_content, page_title = await simulate_browser(url)
+        html_content, page_title_from_browser = await simulate_browser(url)
         
         if not html_content:
-            return None, None, None
+            logger.warning(f"No HTML content fetched from {url} using Playwright.")
+            return None
             
-        # Step 2: Parse HTML to Markdown
-        markdown_content, title = parse_html_to_markdown(html_content)
-        
-        if not markdown_content:
-            return html_content, None, page_title
-        
-        return html_content, markdown_content, title
+        # Step 2: Just return the HTML content
+        return html_content
             
     except Exception as e:
-        logger.error(f"Error scraping {url} with Playwright: {e}")
-        return None, None, None
+        logger.error(f"Error in playwright scrape_with_playwright for {url}: {e}", exc_info=True)
+        return None
 
-def scrape(url: str):
+def scrape(url: str) -> Optional[str]:
     """
     Synchronous wrapper for the async Playwright scraper.
     
@@ -147,7 +143,7 @@ def scrape(url: str):
         url: URL to scrape
         
     Returns:
-        tuple: (html_content, markdown_content, title)
+        str: HTML content as a string, or None if an error occurs
     """
     import asyncio
     
@@ -167,32 +163,23 @@ def main():
     """Main function with placeholder values."""
     # Target URL from the user
     target_url = "https://36kr.com/p/3265228187942663"
-    output_dir = "data/36kr/playwright"
+    output_dir = "data/36kr"
     
     # Ensure output directory exists
     Path(output_dir).mkdir(parents=True, exist_ok=True)
         
-    output_filepath = Path(output_dir) / f"demo_playwright.md"
-    html_path = str(output_filepath).replace('.md', '.html')
+    html_path = Path(output_dir) / f"demo_playwright_scraper.html"
     
     # Scrape website
-    html_content, markdown_content, title = scrape(
+    html_content = scrape(
         url=target_url
     )
     
-    if markdown_content:
+    if html_content:
         # Save HTML
         with open(html_path, 'w', encoding='utf-8') as f:
             f.write(html_content)
         logger.success(f"Saved HTML content to {html_path}")
-        
-        # Save Markdown
-        with open(output_filepath, 'w', encoding='utf-8') as f:
-            f.write(markdown_content)
-        logger.success(f"Saved Markdown content to {output_filepath}")
-        
-        logger.success(f"Successfully scraped article: {title}")
-        logger.info(f"Content saved to {output_dir}")
     else:
         logger.error("Failed to scrape the website.")
 
