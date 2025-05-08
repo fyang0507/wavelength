@@ -2,7 +2,7 @@ from setuptools import setup, find_packages
 
 setup(
     name="wavelength",
-    version="0.1.0",
+    version="0.2.0",
     packages=find_packages(),
     include_package_data=True,
     install_requires=[
@@ -13,6 +13,8 @@ setup(
         "openai",
         "anthropic",
         "notion-client",
+        "markdownify",
+        "playwright",
     ],
     extras_require={
         "dev": ["jupyterlab"]
