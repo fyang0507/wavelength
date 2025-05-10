@@ -3,8 +3,8 @@ name: Daily Content Processing
 
 on:
   schedule:
-    # Run at 6:00 PM New York time (22:00 UTC)
-    - cron: '0 22 * * *'
+    # Run at 12:00 PM New York time (16:00 UTC)
+    - cron: '0 16 * * *'
   # Allow manual triggering
   workflow_dispatch:
 
