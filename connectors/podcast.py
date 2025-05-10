@@ -52,10 +52,22 @@ def check_latest_updates(podcast_name):
     try:
         # Format the URL for iTunes Search API
         base_url = "https://itunes.apple.com/search"
+
+        # Check the podcast name and decide the country
+        # Now support: Chinese (CN) and English (US)
+        if any('\u4e00' <= char <= '\u9fff' for char in podcast_name):
+            country = "CN"
+            logger.debug(f"Detected Chinese podcast: {podcast_name}, using country=CN")
+        else:
+            country = "US"
+            logger.debug(f"Using default country=US for podcast: {podcast_name}")
+        
+        # Add country parameter to the API request
         params = {
             "term": podcast_name,
             "entity": "podcast",
-            "limit": 1
+            "limit": 1,
+            "country": country
         }
         
         # Get the podcast information
@@ -187,8 +199,7 @@ def get_latest_update_details(podcast_name):
 
 def main():
     """Example demonstrating the two-phase podcast content retrieval approach."""
-    podcast_name = "Training Data Sequoia Capital"
-    print(f"Demonstrating two-phase approach for podcast: {podcast_name}")
+    podcast_name = "一席"
     
     # PHASE 1: Check for updates
     print("\n=== Phase 1: Check for updates ===")
