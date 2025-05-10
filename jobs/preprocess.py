@@ -155,6 +155,11 @@ def process_duration(raw_data):
 
 def process_summary_with_llm(raw_data):
     """Process the description into a summary using LLM."""
+    # If summary is already present, return it
+    if raw_data.get('summary'):
+        return raw_data.get('summary')
+
+    # Otherwise, generate a LLM summary based on the description
     # Load prompt configuration
     system_prompt, model = load_prompt_config()
 
