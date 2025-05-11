@@ -10,7 +10,7 @@ import json
 import re
 from datetime import datetime
 from utils.logging_config import logger
-from connectors.llm import api_text_completion
+from services.llm import api_text_completion
 from utils.toml_loader import load_toml_file
 
 

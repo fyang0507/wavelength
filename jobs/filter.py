@@ -19,7 +19,7 @@ from datetime import datetime
 import os
 from utils.logging_config import logger
 from dotenv import load_dotenv
-from connectors.gist import read_from_gist, update_gist
+from services.gist import read_from_gist, update_gist
 from utils.connector_cache import ConnectorCache
 
 def is_github_actions_env():

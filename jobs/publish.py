@@ -8,7 +8,7 @@ import os
 from dotenv import load_dotenv
 # Import the logger from the centralized logging_config module
 from utils.logging_config import logger
-from connectors.notion import create_database_entry
+from connectors.outputs.notion import create_database_entry
 import json
 from datetime import datetime
 import pathlib

@@ -15,9 +15,9 @@ from datetime import datetime
 from utils.logging_config import logger
 
 # Import connector functions for getting full content details
-from connectors.youtube import get_latest_update_details as youtube_get_details
-from connectors.podcast import get_latest_update_details as podcast_get_details
-from connectors.bilibili import get_latest_update_details as bilibili_get_details
+from connectors.sources.youtube import get_latest_update_details as youtube_get_details
+from connectors.sources.podcast import get_latest_update_details as podcast_get_details
+from connectors.sources.bilibili import get_latest_update_details as bilibili_get_details
 from connectors.website.pipeline import get_latest_update_details as website_get_details
 from connectors.website.pipeline import prepare_website_processing_config
 

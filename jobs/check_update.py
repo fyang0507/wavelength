@@ -11,9 +11,9 @@ This implements the first phase of the two-phase content retrieval approach:
 import os
 from dotenv import load_dotenv
 from utils.logging_config import logger
-from connectors.youtube import check_latest_updates as youtube_check_updates
-from connectors.podcast import check_latest_updates as podcast_check_updates
-from connectors.bilibili import check_latest_updates as bilibili_check_updates
+from connectors.sources.youtube import check_latest_updates as youtube_check_updates
+from connectors.sources.podcast import check_latest_updates as podcast_check_updates
+from connectors.sources.bilibili import check_latest_updates as bilibili_check_updates
 from connectors.website.pipeline import check_latest_updates as website_check_updates
 from connectors.website.pipeline import prepare_website_processing_config
 import json

@@ -21,7 +21,7 @@ import re
 from datetime import datetime
 # Import the logger from the centralized logging_config module
 from utils.logging_config import logger
-from connectors.llm import api_text_completion
+from services.llm import api_text_completion
 from utils.toml_loader import load_toml_file
 from utils.llm_response_format import parse_bullet_points
 
