@@ -8,7 +8,7 @@ from connectors.website.parsers.base import BaseParser
 from utils.logging_config import logger
 import tomllib
 from pathlib import Path
-from connectors.llm import api_text_completion
+from services.llm import api_text_completion
 from connectors.website.scrapers import get_scraper
 from connectors.website.parsers import get_parser
 from utils.read_time_estimate import estimate_read_time

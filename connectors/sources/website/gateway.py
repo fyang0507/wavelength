@@ -12,7 +12,7 @@ from utils.logging_config import logger
 import json
 import tomllib
 from pathlib import Path
-from connectors.llm import api_text_completion
+from services.llm import api_text_completion
 from urllib.parse import urlparse, urljoin
 from connectors.website.scrapers import get_scraper
 from connectors.website.parsers.base import BaseParser
