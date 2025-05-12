@@ -51,9 +51,7 @@ async def fetch_content_by_type(content_request: dict): # Changed to async
             return await connector.get_latest_update_details() # Added await
             
         elif content_type == 'bilibili':
-            # Adapt based on BilibiliConnector constructor. Original used channel (name).
-            # If it needs uid, it should be passed: BilibiliConnector(uid=uid, name=channel)
-            connector = BilibiliConnector(channel=channel, uid=uid) # Or however BilibiliConnector is initialized
+            connector = BilibiliConnector(channel=channel, uid=uid)
             return await connector.get_latest_update_details() # Added await
             
         elif content_type == 'website':
@@ -146,5 +144,3 @@ async def main(): # Changed to async
 
 if __name__ == "__main__":
     asyncio.run(main()) # Changed to asyncio.run
-
-# Erroneous block removed from here 
