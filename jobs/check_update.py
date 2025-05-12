@@ -8,7 +8,6 @@ This implements the first phase of the two-phase content retrieval approach:
 2. Retrieve full content details when needed (implemented in jobs/preprocess.py)
 """
 
-from dotenv import load_dotenv
 from utils.logging_config import logger
 from connectors.sources.youtube import YoutubeConnector
 from connectors.sources.podcast import PodcastConnector
@@ -21,77 +20,16 @@ from utils.toml_loader import load_toml_file
 from utils.connector_cache import ConnectorCache
 import asyncio
 
-def load_environment():
-    """
-    Load and validate all required environment variables.
-
-    Returns:
-        dict: Dictionary containing required environment variables for retrieval.
-
-    Raises:
-        ValueError: If any required environment variable is missing.
-    """
-    load_dotenv()
-
-    required_env_vars = {
-        # YOUTUBE_API_KEY is no longer directly needed by this script for YouTube
-        # but other connectors might still need env_vars, so we keep the structure.
-        # 'YOUTUBE_API_KEY': os.getenv('YOUTUBE_API_KEY') 
-    }
-    # If other connectors add their specific keys here, the logic remains valid.
-    # For now, if only YouTube was using it, this dict might be empty or we might adjust
-    # the error checking if no vars are strictly required at this level anymore.
-    # For safety, let's assume other env vars might be needed by other connectors.
-    # So, we just remove YOUTUBE_API_KEY from direct check here.
-    
-    # Let's refine env_vars to only include what's explicitly fetched and needed by other sync connectors
-    # If no other connector needs specific env_vars from this function, it can be simplified.
-    # For now, keeping it flexible.
-    
-    # Example: If PodcastConnector needed a key, it would be:
-    # 'PODCAST_API_KEY': os.getenv('PODCAST_API_KEY')
-    # And then validated.
-    
-    # For this iteration, let's assume no other connectors need env vars passed from here.
-    # So, the required_env_vars can be empty if YOUTUBE_API_KEY was the only one.
-    # However, load_dotenv() is still important for YoutubeConnector itself.
-
-    # Re-evaluating load_environment: YoutubeConnector loads its own .env.
-    # This function was primarily for YOUTUBE_API_KEY for the old functional connector.
-    # Let's simplify load_environment if no other connector depends on it passing env_vars.
-    # For now, just ensure load_dotenv() is called, which it is.
-    # The return value `env_vars` is not used for Youtube,
-    # but might be for other *synchronous* connectors if they were to expect it.
-
-    return {} # Return empty dict if no other env vars are needed by other connectors from here.
-
 
 async def process_youtube_channels(youtube_channels):
     """Check for updates from YouTube channels and return results."""
     results = []
-    # youtube_api_key is no longer needed here, YoutubeConnector handles it.
-
     for channel_name in youtube_channels:
         logger.info(f"Checking for updates from YouTube channel: {channel_name}")
         try:
             # YoutubeConnector takes channel and optional duration_min. API key is handled internally.
             youtube_connector = YoutubeConnector(channel=channel_name) 
-            
             await youtube_connector.check_latest_updates() # Populates cache, returns None
-            
-            # Now, get the details that were just cached.
-            update_info = await youtube_connector.get_latest_update_details() 
-            
-            if update_info:
-                # Ensure 'type' and 'channel' are in update_info if not already added by connector
-                if 'type' not in update_info: update_info['type'] = 'youtube'
-                if 'channel' not in update_info: update_info['channel'] = channel_name
-                results.append(update_info)
-                logger.info(f"Successfully processed and retrieved update info for YouTube channel: {channel_name}")
-            else:
-                logger.warning(f"No updates found or failed to retrieve details for YouTube channel: {channel_name} after checking.")
-        except ValueError as e: # Catch init errors like missing API key
-            logger.error(f"Failed to initialize YoutubeConnector for {channel_name}: {e}")
         except Exception as e:
             logger.error(f"Error processing YouTube channel {channel_name}: {e}", exc_info=True)
             
@@ -101,16 +39,11 @@ async def process_youtube_channels(youtube_channels):
 async def process_podcasts(podcast_names):
     """Check for updates from podcasts and return results."""
     results = []
-    # podcast_connector = PodcastConnector() 
     for podcast_name in podcast_names:
         logger.info(f"Checking for updates from podcast: {podcast_name}")
         try:
             podcast_connector = PodcastConnector(podcast_name) 
-            update_info = await podcast_connector.check_latest_updates() 
-            if update_info:
-                results.append(update_info)
-            else:
-                logger.warning(f"No updates found for podcast: {podcast_name}")
+            await podcast_connector.check_latest_updates() 
         except Exception as e:
             logger.error(f"Error processing Podcast {podcast_name}: {e}", exc_info=True)
     return results
@@ -126,20 +59,11 @@ async def process_bilibili(bilibili_users):
             
     for user in bilibili_users:
         uid = user.get('uid')
-        name = user.get('name')
-        
-        if not uid:
-            logger.error(f"Missing uid for Bilibili user: {name}")
-            continue
-            
+        name = user.get('name')            
         logger.info(f"Checking for updates from Bilibili user: {name} (uid: {uid})")
         try:
             bilibili_connector = BilibiliConnector(uid=uid, channel=name) 
-            update_info = await bilibili_connector.check_latest_updates() 
-            if update_info:
-                results.append(update_info)
-            else:
-                logger.warning(f"No updates found for Bilibili user: {name}")
+            await bilibili_connector.check_latest_updates() 
         except Exception as e:
             logger.error(f"Error processing Bilibili user {name}: {e}", exc_info=True)
             
@@ -151,30 +75,15 @@ async def process_bilibili(bilibili_users):
 async def process_websites(websites):
     """Check for updates from websites and return results."""
     results = []
-    
     for website_subscription in websites:
         channel = website_subscription.get('channel')
         source_url = website_subscription.get('source_url')
-        
-        if not channel or not source_url:
-            logger.error(f"Missing channel or source_url in website subscription: {website_subscription}. Skipping.")
-            continue
             
         logger.info(f"Processing website subscription: {channel} ({source_url})")
         
         try:
             website_connector = WebsiteConnector(channel=channel, source_url=source_url) 
-            update_info = await website_connector.check_latest_updates() 
-            
-            if update_info:
-                if 'source_url' not in update_info: # Keep this safety check
-                    update_info['source_url'] = source_url
-                results.append(update_info)
-            else:
-                logger.warning(f"No updates found for website: {channel}")
-
-        except ValueError as e:
-            logger.error(f"Skipping website {channel} due to configuration error: {e}")
+            await website_connector.check_latest_updates()
         except Exception as e:
             logger.error(f"Error during website_check_updates for {channel} ({source_url}): {e}. Skipping.")
             
@@ -184,19 +93,9 @@ async def process_websites(websites):
 async def main():
     """Main function to check for updates from all sources and save results."""
     try:
-        _ = load_environment() # Call to ensure dotenv is loaded, ignore return if not used by sync connectors
 
         cache = ConnectorCache()
-        cache_dir = cache.cache_dir
-        
-        if cache_dir.exists():
-            logger.info(f"Clearing all caches from: {cache_dir}")
-            for cache_file in cache_dir.glob("*.json"):
-                try:
-                    cache_file.unlink()
-                    logger.debug(f"Removed cache file: {cache_file.name}")
-                except Exception as e:
-                    logger.error(f"Error removing cache file {cache_file.name}: {e}")
+        cache.clear_old_cache(days=0) # clear all caches
         
         subscriptions = load_toml_file("subscriptions.toml")
 
@@ -233,7 +132,7 @@ async def main():
         data_dir = pathlib.Path("data")
         data_dir.mkdir(exist_ok=True)
         current_date_str = datetime.now().strftime("%Y-%m-%d")
-        results_file = data_dir / f"update_check_results_{current_date_str}.json"
+        results_file = data_dir / f"check_update_{current_date_str}.json"
 
         logger.info(f"Saving update check results to: {results_file}")
         try:
