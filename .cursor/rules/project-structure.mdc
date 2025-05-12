@@ -9,26 +9,41 @@ This project is organized into these main directories:
 
 ## Connectors
 
-The [connectors/](mdc:connectors) directory contains individual connectors that link to different external sources:
+The [connectors/](mdc:connectors) directory is now organized into sources and outputs.
 
-- [YouTube](mdc:connectors/youtube.py) - YouTube video content processing
-- [Podcast](mdc:connectors/podcast.py) - Podcast audio content processing
-- [Notion](mdc:connectors/notion.py) - Notion document integration
-- [Newsletter](mdc:connectors/newsletter.py) - Email newsletter processing (HTML)
-- [Newsletter Plain](mdc:connectors/newsletter_plain.py) - Plain text newsletter processing
-- [Bilibili](mdc:connectors/bilibili.py) - Bilibili video platform integration
-- [LLM](mdc:connectors/llm.py) - Language model integration
-- [Gist](mdc:connectors/gist.py) - GitHub Gist integration
-- [Website](mdc:connectors/website) - Website content extraction. This module is further organized into:
-    - [Pipeline](mdc:connectors/website/pipeline.py) - Orchestrates website content retrieval using a two-phase approach (update checking and content detailing).
-    - [Parsers](mdc:connectors/website/parsers) - Contains specific parser implementations for different websites.
-        - [Generic Parser](mdc:connectors/website/parsers/generic.py) - A generic parser, often relying on LLMs.
-        - [36kr Parser](mdc:connectors/website/parsers/36kr.py) - Parser specific to 36kr.com.
-    - [Scrapers](mdc:connectors/website/scrapers) - Contains different scraping mechanisms.
-        - [Basic Scraper](mdc:connectors/website/scrapers/basic_scraper.py) - A simple scraper using HTTP requests.
-        - [Playwright Scraper](mdc:connectors/website/scrapers/playwright_scraper.py) - A scraper using Playwright for dynamic content.
+### Sources
 
-Each connector implements functionality to fetch and process data from its respective source.
+The [connectors/sources/](mdc:connectors/sources) directory contains individual connectors that link to different external data sources:
+
+- [Base Source](mdc:connectors/sources/base_source.py) - Base class for source connectors
+- [Bilibili](mdc:connectors/sources/bilibili.py) - Bilibili video platform integration
+- [Newsletter](mdc:connectors/sources/newsletter.py) - Email newsletter processing (HTML)
+- [Newsletter Plain](mdc:connectors/sources/newsletter_plain.py) - Plain text newsletter processing
+- [Podcast](mdc:connectors/sources/podcast.py) - Podcast audio content processing
+- [Website](mdc:connectors/sources/website) - Website content extraction. This module is further organized into:
+    - [Pipeline](mdc:connectors/sources/website/pipeline.py) - Orchestrates website content retrieval using a two-phase approach (update checking and content detailing).
+    - [Parsers](mdc:connectors/sources/website/parsers) - Contains specific parser implementations for different websites.
+        - [Generic Parser](mdc:connectors/sources/website/parsers/generic.py) - A generic parser, often relying on LLMs.
+        - [36kr Parser](mdc:connectors/sources/website/parsers/36kr.py) - Parser specific to 36kr.com.
+    - [Scrapers](mdc:connectors/sources/website/scrapers) - Contains different scraping mechanisms.
+        - [Basic Scraper](mdc:connectors/sources/website/scrapers/basic_scraper.py) - A simple scraper using HTTP requests.
+        - [Playwright Scraper](mdc:connectors/sources/website/scrapers/playwright_scraper.py) - A scraper using Playwright for dynamic content.
+- [YouTube](mdc:connectors/sources/youtube.py) - YouTube video content processing
+
+Each source connector implements functionality to fetch and process data from its respective source.
+
+### Outputs
+
+The [connectors/outputs/](mdc:connectors/outputs) directory contains connectors for sending data to different destinations:
+
+- [Notion](mdc:connectors/outputs/notion.py) - Notion document integration
+
+## Services
+
+The [services/](mdc:services) directory contains modules that provide various services:
+
+- [Gist](mdc:services/gist.py) - GitHub Gist integration
+- [LLM](mdc:services/llm.py) - Language model integration
 
 ## Jobs
 

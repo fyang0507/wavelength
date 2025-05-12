@@ -1,0 +1,6 @@
+---
+description: package installation
+globs: 
+alwaysApply: false
+---
+When installing pip package, use `uv pip`
