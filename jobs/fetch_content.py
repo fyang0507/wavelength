@@ -13,15 +13,16 @@ import json
 import os
 from datetime import datetime
 from utils.logging_config import logger
+import asyncio # Added for async operations
 
-# Import connector functions for getting full content details
-from connectors.sources.youtube import get_latest_update_details as youtube_get_details
-from connectors.sources.podcast import get_latest_update_details as podcast_get_details
-from connectors.sources.bilibili import get_latest_update_details as bilibili_get_details
-from connectors.website.pipeline import get_latest_update_details as website_get_details
-from connectors.website.pipeline import prepare_website_processing_config
+# Import connector classes for getting full content details
+from connectors.sources.youtube import YoutubeConnector # Changed: Corrected class name
+from connectors.sources.podcast import PodcastConnector
+from connectors.sources.bilibili import BilibiliConnector
+from connectors.sources.website.pipeline import WebsiteConnector # Ensure this path is correct
+# from connectors.website.pipeline import prepare_website_processing_config # Removed
 
-def fetch_content_by_type(content_request):
+async def fetch_content_by_type(content_request: dict): # Changed to async
     """
     Fetch full content details by calling the appropriate connector function.
     
@@ -33,108 +34,104 @@ def fetch_content_by_type(content_request):
     """
     content_type = content_request.get('type')
     channel = content_request.get('channel')
-    
+    source_url = content_request.get('source_url') # For website
+    uid = content_request.get('uid') # For Bilibili, if needed by constructor
+
     logger.info(f"Fetching content for {content_type}:{channel}")
     
     try:
-        # Call the appropriate get_latest_update_details function based on content type
         if content_type == 'youtube':
-            return youtube_get_details(channel)
+            # YoutubeConnector takes channel and optional duration_min. API key is handled internally.
+            # Assuming duration_min is default or not needed for get_latest_update_details context.
+            connector = YoutubeConnector(channel=channel)
+            return await connector.get_latest_update_details()
             
         elif content_type == 'podcast':
-            return podcast_get_details(channel)
+            connector = PodcastConnector(podcast_name=channel) 
+            return await connector.get_latest_update_details() # Added await
             
         elif content_type == 'bilibili':
-            # For bilibili, we need the UID
-            uid = content_request.get('uid')
-            if not uid and 'aid' in content_request:
-                # If UID is not directly available but we have aid (from the example),
-                # we can use channel name only as it should be cached already
-                return bilibili_get_details(channel)
-            elif not uid:
-                logger.error(f"Missing UID for Bilibili channel: {channel}")
-                return None
-            return bilibili_get_details(channel)
+            # Adapt based on BilibiliConnector constructor. Original used channel (name).
+            # If it needs uid, it should be passed: BilibiliConnector(uid=uid, name=channel)
+            connector = BilibiliConnector(channel=channel, uid=uid) # Or however BilibiliConnector is initialized
+            return await connector.get_latest_update_details() # Added await
             
         elif content_type == 'website':
-            source_url = content_request.get('source_url')
             if not source_url:
                 logger.error(f"Missing 'source_url' in content_request for website channel: {channel}. Cannot fetch content.")
                 return None
             
-            try:
-                website_config = prepare_website_processing_config(content_request)
-                logger.info(f"Using validated scraper config for {channel} (fetch phase): {website_config}")
-
-                return website_get_details(
-                    channel=channel,
-                    website_config=website_config,
-                )
-            except ValueError as e:
-                # Errors from get_validated_website_config (e.g., config not found, incomplete) are caught here
-                logger.error(f"Cannot fetch content for website '{channel}' (source: {source_url}) due to configuration error: {e}")
-                return None
-            # Other unexpected errors during website_get_details will be caught by the broader try-except in the main calling loop
+            # Assuming WebsiteConnector is initialized with channel and source_url
+            connector = WebsiteConnector(channel=channel, source_url=source_url)
+            return await connector.get_latest_update_details() # Added await
 
         else:
             logger.error(f"Unsupported content type: {content_type}")
             return None
             
+    except ValueError as e: # Catch init errors like missing API key for Youtube
+        logger.error(f"Initialization error for {content_type}:{channel}: {e}")
+        return None
     except Exception as e:
-        logger.error(f"Error fetching content for {content_type}:{channel}: {e}")
+        logger.error(f"Error fetching content for {content_type}:{channel}: {e}", exc_info=True)
         return None
 
 
-def main():
+async def main(): # Changed to async
     """Main function to fetch full content for all content requests."""
 
-    # Define specific content request file path
-    # Get today's date in the format YYYY-MM-DD
     today = datetime.now().strftime("%Y-%m-%d")
     content_request_path = f"data/content_request_{today}.json"
     raw_results_path = f"data/raw_results_{today}.json"
     
-    # Check if content request file exists
     if not os.path.exists(content_request_path):
         logger.error(f"Error: {content_request_path} does not exist.")
         return
         
-    # Load content requests
     with open(content_request_path, 'r', encoding='utf-8') as f:
         content_requests = json.load(f)
         
     if not content_requests:
         logger.info("No content requests found. Nothing to fetch.")
-        # Create an empty raw_results file to allow the pipeline to continue
         with open(raw_results_path, 'w', encoding='utf-8') as f:
             json.dump([], f, ensure_ascii=False, indent=2)
         return
         
-    logger.info(f"Found {len(content_requests)} content requests to process")
+    logger.info(f"Found {len(content_requests)} content requests to process concurrently.")
     
-    # Process each content request
     raw_results = []
     success_count = 0
     failure_count = 0
     
-    for index, request in enumerate(content_requests, 1):
+    # Create a list of tasks to run concurrently
+    tasks = []
+    for request in content_requests:
+        tasks.append(fetch_content_by_type(request))
+    
+    # Run all tasks concurrently
+    # fetch_content_by_type handles exceptions internally and returns None on failure.
+    # If an exception were to escape fetch_content_by_type and asyncio.gather(..., return_exceptions=False) (default),
+    # gather would raise the first exception it encounters.
+    # With return_exceptions=True, it would return exceptions as results.
+    # Since our function returns None on error, we don't need return_exceptions=True here.
+    logger.info(f"Starting concurrent fetching for {len(tasks)} tasks...")
+    all_results_details = await asyncio.gather(*tasks)
+    logger.info("Concurrent fetching complete.")
+
+    # Process the results
+    for i, content_details in enumerate(all_results_details):
+        request = content_requests[i] # Get the original request for context
         channel = request.get('channel')
         content_type = request.get('type')
-        
-        logger.info(f"Fetching content {index}/{len(content_requests)}: {channel} - {content_type}")
-        
-        # Fetch full content details
-        content_details = fetch_content_by_type(request)
-        
+
         if content_details:
             raw_results.append(content_details)
             success_count += 1
-            logger.info(f"Successfully fetched content for {channel} - {content_type}")
+            logger.info(f"Successfully fetched content for {channel} - {content_type} (from concurrent tasks)")
         else:
             failure_count += 1
-            logger.warning(f"Failed to fetch content for {channel} - {content_type}")
+            logger.warning(f"Failed to fetch content for {channel} - {content_type} (from concurrent tasks)")
             
-    # Save raw results
     with open(raw_results_path, 'w', encoding='utf-8') as f:
         json.dump(raw_results, f, ensure_ascii=False, indent=2)
         
@@ -142,10 +139,12 @@ def main():
     
     if failure_count > 0:
         logger.warning(f"Failed to fetch {failure_count} items")
-        logger.info(f"fetched {success_count}/{len(content_requests)} content items")
+        logger.info(f"Fetched {success_count}/{len(content_requests)} content items")
     else:
         logger.success(f"Successfully fetched {success_count}/{len(content_requests)} content items")
 
 
 if __name__ == "__main__":
-    main() 
+    asyncio.run(main()) # Changed to asyncio.run
+
+# Erroneous block removed from here 

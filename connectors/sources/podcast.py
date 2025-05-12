@@ -15,252 +15,186 @@ from utils.logging_config import logger
 from utils.connector_cache import ConnectorCache
 from datetime import datetime
 import email.utils
+from typing import Optional, Dict, Any
+import asyncio
+from connectors.sources.base_source import SourceConnector
 
-def generate_cache_key(podcast_name):
+class PodcastConnector(SourceConnector):
     """
-    Generate a standardized cache key for podcast data.
-    
-    Args:
-        podcast_name (str): The name of the podcast
-        
-    Returns:
-        str: A standardized cache key
+    Connector for fetching content from podcast channels.
     """
-    # Convert podcast name to lowercase and replace spaces with underscores
-    normalized_name = podcast_name.lower().replace(' ', '_')
-    
-    # Return the normalized name as the cache key
-    # Note: The date will be added by ConnectorCache
-    return normalized_name
+    def __init__(self, podcast_name: str):
+        super().__init__(source_identifier=podcast_name)
+        self.podcast_name = podcast_name
+        self.cache = ConnectorCache()
 
-def get_podcast_feed_url(podcast_name):
-    """
-    Get the RSS feed URL for a podcast by name using iTunes Search API.
-    
-    Args:
-        podcast_name (str): Name of the podcast channel
+    def _get_podcast_feed_url(self) -> Optional[str]:
+        """
+        Get the RSS feed URL for a podcast by name using iTunes Search API.
+        """
+        base_url = "https://itunes.apple.com/search"
         
-    Returns:
-        str: RSS feed URL or None if not found
-    """
-    # Format the URL for iTunes Search API
-    base_url = "https://itunes.apple.com/search"
+        # Check if the podcast name contains Chinese characters
+        # If so, use the CN country code, otherwise use US
+        country = "CN" if any('\u4e00' <= char <= '\u9fff' for char in self.podcast_name) else "US"
+        logger.debug(f"Using country={country} for podcast: {self.podcast_name}")
+        
+        params = {
+            "term": self.podcast_name, 
+            "entity": "podcast", 
+            "limit": 1,
+            "country": country,
+        }
 
-    # Check the podcast name and decide the country
-    # Now support: Chinese (CN) and English (US)
-    if any('\u4e00' <= char <= '\u9fff' for char in podcast_name):
-        country = "CN"
-        logger.debug(f"Detected Chinese podcast: {podcast_name}, using country=CN")
-    else:
-        country = "US"
-        logger.debug(f"Using default country=US for podcast: {podcast_name}")
-    
-    # Add country parameter to the API request
-    params = {
-        "term": podcast_name,
-        "entity": "podcast",
-        "limit": 1,
-        "country": country
-    }
-    
-    # Get the podcast information
-    response = requests.get(base_url, params=params)
-    if response.status_code != 200 or not response.json().get('results'):
-        logger.warning(f"No podcast found for name: {podcast_name}")
-        return None
-        
-    # Get the RSS feed URL
-    feed_url = response.json()['results'][0]['feedUrl']
-    return feed_url
-
-def process_podcast_feed(feed_url, podcast_name):
-    """
-    Process a podcast RSS feed and extract the latest episode details.
-    
-    Args:
-        feed_url (str): URL of the podcast RSS feed
-        podcast_name (str): Name of the podcast channel
-        
-    Returns:
-        dict: Metadata for the latest podcast episode or None if not found
-    """
-    # Get the RSS feed content
-    response = requests.get(feed_url)
-    if response.status_code != 200:
-        logger.error(f"Failed to fetch RSS feed for podcast: {podcast_name}")
-        return None
-    
-    # Parse the XML feed
-    root = ET.fromstring(response.content)
-    channel = root.find('channel')
-    latest_item = channel.find('item')
-    
-    if latest_item is None:
-        logger.warning(f"No episodes found in podcast feed: {podcast_name}")
-        return None
-    
-    # Initialize variables
-    title = published_at = duration = summary = link = description = episode = None
-    
-    # Extract link from enclosure tag if present
-    enclosure_tag = latest_item.find('enclosure')
-    if enclosure_tag is not None and 'url' in enclosure_tag.attrib:
-        link = enclosure_tag.attrib['url']
-    
-    # Parse other details with full metadata extraction
-    for child in latest_item:
-        tag_name = child.tag.split('}')[-1]  # Handle potential namespaces
-        
-        if tag_name == 'title':
-            title = child.text
-        elif tag_name == 'pubDate':
-            published_at = child.text
-        elif tag_name == 'duration' and 'itunes' in child.tag:
-            duration = child.text
-        elif tag_name == 'summary' and 'itunes' in child.tag:
-            summary = child.text
-        elif tag_name == 'description':
-            description = child.text
-        elif tag_name == 'episode' and 'itunes' in child.tag and 'episodeType' not in child.tag:
-            episode = child.text
-        elif tag_name == 'guid':
-            episode_id = child.text
-        elif tag_name == 'duration' and duration is None:
-            duration = child.text
-        elif tag_name == 'summary' and summary is None:
-            summary = child.text
-    
-    # Use description as summary if summary is still None
-    if summary is None:
-        summary = description
-    
-    # Format the published date
-    if published_at:
         try:
-            # Parse the RFC 822 date format
-            dt = email.utils.parsedate_to_datetime(published_at)
-            # Set only the date part
-            published_at = dt.date().isoformat()
-        except (ValueError, TypeError) as e:
-            logger.error(f"Could not parse published_at date for podcast '{podcast_name}': {e}")
-            published_at = datetime.now().date().isoformat()
-    else:
-        published_at = datetime.now().date().isoformat()
-    
-    # Create comprehensive result with all available metadata
-    result = {
-        "type": "podcast",
-        "channel": podcast_name,
-        "title": title or "Unknown Episode",
-        "published_at": published_at,
-        "url": link,
-        "episode_id": episode_id if 'episode_id' in locals() else link,  # Use guid or url as identifier
-        "duration": duration,
-        "summary": summary,
-        "description": description,
-        "episode": episode
-    }
-    
-    return result
-
-def check_latest_updates(podcast_name):
-    """
-    Check for updates in a podcast feed and cache complete episode details.
-    This function orchestrates the podcast data retrieval process.
-    
-    Args:
-        podcast_name (str): Name of the podcast channel
-        
-    Returns:
-        dict: Metadata for the latest podcast episode or None if not found
-    """
-    # Initialize cache
-    cache = ConnectorCache()
-    cache_key = generate_cache_key(podcast_name)
-    
-    try:
-        # Step 1: Get the podcast feed URL
-        feed_url = get_podcast_feed_url(podcast_name)
-        if not feed_url:
+            response = requests.get(base_url, params=params)
+            response.raise_for_status() # Raise an exception for HTTP errors
+            results = response.json().get('results')
+            return results[0]['feedUrl']
+        except requests.RequestException as e:
+            logger.error(f"Error fetching podcast feed URL for {self.podcast_name}: {e}")
             return None
+        except (KeyError, IndexError) as e:
+            logger.error(f"Error parsing iTunes API response for {self.podcast_name}: {e}")
+            return None 
+
+    def _process_podcast_feed(self, feed_url: str) -> Optional[Dict[str, Any]]:
+        """
+        Process a podcast RSS feed and extract the latest episode details.
+        """
+        try:
+            response = requests.get(feed_url)
+            response.raise_for_status()
+            root = ET.fromstring(response.content)
+            channel = root.find('channel')
+            if channel is None:
+                logger.warning(f"No channel found in RSS feed: {feed_url}")
+                return None
+            latest_item = channel.find('item')
+            if latest_item is None:
+                logger.warning(f"No episodes found in podcast feed: {self.podcast_name}")
+                return None
+
+            data = {}
+            # Try to find specific iTunes tags first
+            for child in latest_item:
+                tag_name = child.tag.split('}')[-1] if '}' in child.tag else child.tag
+                if tag_name == 'title':
+                    data['title'] = child.text
+                elif tag_name == 'pubDate':
+                    data['published_at_raw'] = child.text
+                elif tag_name == 'duration' and 'itunes' in child.tag.lower():
+                    data['duration'] = child.text
+                elif tag_name == 'summary' and 'itunes' in child.tag.lower():
+                    data['summary'] = child.text
+                elif tag_name == 'description': # generic description
+                    data['description_generic'] = child.text
+                elif tag_name == 'episode' and 'itunes' in child.tag.lower() and 'episodetype' not in child.tag.lower():
+                    data['episode_number'] = child.text
+                elif tag_name == 'guid':
+                    data['episode_id'] = child.text
+                elif child.tag.endswith('link') and not data.get('url'): #Prefer specific link from enclosure if available
+                     data['url'] = child.text
+
+            # Enclosure for media URL
+            enclosure_tag = latest_item.find('enclosure')
+            if enclosure_tag is not None and 'url' in enclosure_tag.attrib:
+                data['url'] = enclosure_tag.attrib['url'] 
+            elif latest_item.find('link') is not None and not data.get('url') : # Fallback to item link if no enclosure
+                data['url'] = latest_item.find('link').text
+
+            # Fallbacks and formatting
+            if 'summary' not in data and 'description_generic' in data:
+                data['summary'] = data['description_generic']
             
-        # Step 2: Process the feed and get episode details
-        result = process_podcast_feed(feed_url, podcast_name)
-        if not result:
+            published_at_iso = datetime.now().date().isoformat()
+            if data.get('published_at_raw'):
+                try:
+                    dt = email.utils.parsedate_to_datetime(data['published_at_raw'])
+                    published_at_iso = dt.date().isoformat()
+                except Exception as e:
+                    logger.warning(f"Could not parse pubDate '{data['published_at_raw']}' for {self.podcast_name}: {e}")
+            
+            return {
+                "type": "podcast",
+                "channel": self.podcast_name,
+                "title": data.get('title', "Unknown Episode"),
+                "published_at": published_at_iso,
+                "url": data.get('url'),
+                "episode_id": data.get('episode_id', data.get('url')), 
+                "duration": data.get('duration'),
+                "summary": data.get('summary'),
+                "description": data.get('description_generic', data.get('summary')),
+                "episode_number": data.get('episode_number')
+            }
+        except requests.RequestException as e:
+            logger.error(f"Failed to fetch or process RSS feed for {self.podcast_name} from {feed_url}: {e}")
             return None
-        
-        # Step 3: Cache the complete result for later
-        cache.save("podcast", cache_key, result)
-        
-        return result
-        
-    except Exception as e:
-        logger.error(f"Error checking updates for podcast '{podcast_name}': {e}")
-        return None
+        except ET.ParseError as e:
+            logger.error(f"Error parsing XML for {self.podcast_name} from {feed_url}: {e}")
+            return None
 
-def get_latest_update_details(podcast_name):
-    """
-    Get full content and metadata for the latest podcast episode from cache.
-    Does not implement fetching logic - only retrieves from cache.
-    
-    Args:
-        podcast_name: Podcast name for cache lookup
-    
-    Returns:
-        dict: Complete metadata for the episode
-        
-    Raises:
-        ValueError: If episode not found in cache
-    """
-    if not podcast_name:
-        raise ValueError("Podcast name is required to get episode content from cache")
-    
-    # Try to get from cache
-    cache = ConnectorCache()
-    cache_key = generate_cache_key(podcast_name)
-    cached_data = cache.load("podcast", cache_key)
-    
-    # Check if we found cached data
-    if cached_data:
-        logger.info(f"Using cached data for podcast episode: {cached_data.get('title')}")
-        return cached_data
-    
-    # If we reach here, the episode was not in cache
-    error_msg = f"No episode found in cache for podcast {podcast_name}"
-    logger.error(error_msg)
-    raise ValueError(error_msg)
+    async def check_latest_updates(self) -> None:
+        """
+        Check for updates in a podcast feed and cache complete episode details.
+        Does not return any data; saves to cache.
+        """
+        cache_key = self._generate_cache_key()
+        try:
+            feed_url = self._get_podcast_feed_url()
+            if not feed_url:
+                return # Implicitly None
+            result = self._process_podcast_feed(feed_url)
+            if not result:
+                return # Implicitly None
+            self.cache.save("podcast", cache_key, result) # Cache the full episode data
+            
+            episode_identifier = result.get("episode_id") or result.get("url")
+            if episode_identifier:
+                logger.success(f"Podcast: Found and cached episode '{result.get('title')}' (ID: {episode_identifier}) for {self.podcast_name}")
+            else:
+                logger.warning(f"Podcast: Cached episode '{result.get('title')}' for {self.podcast_name} but no suitable episode_id or URL found for logging.")
+            # No return value
+        except Exception as e:
+            logger.error(f"Error checking updates for podcast '{self.podcast_name}': {e}", exc_info=True)
+            # No return value
 
-def main():
-    """Example demonstrating the two-phase podcast content retrieval approach."""
+    async def get_latest_update_details(self) -> Optional[Dict[str, Any]]:
+        """
+        Get full content and metadata for the latest podcast episode by loading from cache.
+        Assumes check_latest_updates has populated the cache for this podcast channel.
+        """
+        cache_key = self._generate_cache_key() # Cache key for the podcast channel
+        cached_episode_data = self.cache.load("podcast", cache_key)
+
+        if cached_episode_data:
+            logger.info(f"Returning cached data for podcast {self.podcast_name}, Episode Title: {cached_episode_data.get('title')}")
+            return cached_episode_data
+        else:
+            logger.warning(f"No cached data found for podcast {self.podcast_name} (cache key: {cache_key}). Run check_latest_updates first.")
+            return None
+
+async def main():
     podcast_name = "一席"
-    
-    # PHASE 1: Check for updates
-    print("\n=== Phase 1: Check for updates ===")
-    print("In this phase, we check for new episodes and cache complete data.")
-    latest = check_latest_updates(podcast_name)
-    
-    if not latest:
-        print("No episodes found")
-        return
-        
-    print(f"Found latest episode: {latest['title']}")
-    print(f"Published: {latest['published_at']}")
-    print(f"URL: {latest['url']}")
-    
-    # PHASE 2: Get full content from cache
-    print("\n=== Phase 2: Get content from cache ===")
-    print("In this phase, we retrieve the full content from cache without re-fetching.")
-    try:
-        full_content = get_latest_update_details(podcast_name)
-        print(f"Retrieved from cache: {full_content['title']}")
-        print(f"Duration: {full_content.get('duration', 'N/A')}")
-        if full_content.get('description'):
-            print(f"Description: {full_content['description'][:100]}...")
-        if full_content.get('summary'):
-            print(f"Summary: {full_content['summary'][:100]}...")
-    except ValueError as e:
-        print(f"Error retrieving from cache: {e}")
+    connector = PodcastConnector(podcast_name)
 
+    logger.info(f"Demonstrating two-phase approach for podcast: {podcast_name}")
+    
+    logger.info("=== Phase 1: Check for updates (caches data) ===")
+    await connector.check_latest_updates() # Call it, no return value
+
+    logger.info("Cache should now be populated if updates were found.")
+    
+    logger.info("=== Phase 2: Get content from cache/details ===")
+    full_content = await connector.get_latest_update_details() # No argument
+    
+    if full_content:
+        logger.info(f"Retrieved details: {full_content.get('title')}")
+        logger.info(f"Duration: {full_content.get('duration', 'N/A')}")
+        summary = full_content.get('summary') or full_content.get('description', '')
+        logger.info(f"Summary/Description: {summary[:100]}...")
+    else:
+        logger.error(f"Error retrieving full content details for podcast: {podcast_name}. Was cache populated?")
 
 if __name__ == "__main__":
-    main()
+    asyncio.run(main())

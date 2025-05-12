@@ -8,14 +8,16 @@ Phase 1: Check for updates by scraping the gateway page and finding the latest c
 Phase 2: Process and retrieve the full content details when needed (get_latest_update_details)
 """
 
+import asyncio
 from utils.logging_config import logger
-from connectors.website import gateway
-from connectors.website import content
+from connectors.sources.website import gateway
+from connectors.sources.website import content
 from typing import Dict, Any, Optional
 from utils.connector_cache import ConnectorCache
 import tomllib
 from functools import lru_cache
 from utils.url_utils import extract_base_url
+from connectors.sources.base_source import SourceConnector
 
 @lru_cache(maxsize=None)
 def _load_website_configs() -> Dict[str, Any]:
@@ -30,280 +32,187 @@ def _load_website_configs() -> Dict[str, Any]:
         return loaded_configs
     except FileNotFoundError:
         logger.error("Configuration file config/website.toml not found. This error will be cached.")
-        raise # Re-raise for the first caller to handle; subsequent calls get cached error or result
+        raise
     except tomllib.TOMLDecodeError as e:
         logger.error(f"Error decoding config/website.toml: {e}. This error will be cached.")
-        raise # Re-raise
+        raise
 
-
-def generate_cache_key(channel: str) -> str:
+class WebsiteConnector(SourceConnector):
     """
-    Generate a standardized cache key for website content.
-    
-    Args:
-        channel: The name of the website channel
-        
-    Returns:
-        A standardized cache key
+    Connector for fetching and processing content from websites.
+    Orchestrates a two-phase approach: checking for latest updates (Phase 1)
+    and retrieving full content details (Phase 2).
     """
-    # Convert channel name to lowercase and replace spaces with underscores
-    normalized_name = channel.lower().replace(' ', '_')
-    
-    # Return the normalized name as the cache key
-    # Note: The date will be added by ConnectorCache
-    return normalized_name
+    def __init__(self, channel: str, source_url: str):
+        super().__init__(source_identifier=channel) # Call base class __init__
+        self.channel = channel # Kept for existing logic
+        self.source_url = source_url
+        self.cache = ConnectorCache()
+        self.website_config: Optional[Dict[str, Any]] = self._prepare_website_processing_config()
+        if not self.website_config:
+            # Error logged in _prepare_website_processing_config
+            raise ValueError(f"Failed to prepare website config for channel {channel} and source {source_url}")
 
+    def _prepare_website_processing_config(self) -> Optional[Dict[str, Any]]:
+        """Prepares and validates necessary configurations for website processing."""
+        try:
+            all_website_configs = _load_website_configs()
+            if not all_website_configs:
+                logger.error("Failed to load website configurations or config is empty.")
+                return None
+        except (FileNotFoundError, tomllib.TOMLDecodeError) as e:
+            logger.error(f"Critical error loading config/website.toml for channel {self.channel}: {e}")
+            return None
 
-def check_latest_updates(
-    channel: str, 
-    source_url: str, 
-    website_config: Dict[str, str],
-) -> Optional[Dict[str, Any]]:
-    """
-    Checks a website source for its latest content update and caches the findings.
-
-    This function represents Phase 1 of the content retrieval pipeline. It accesses
-    the provided `source_url` (e.g., a blog's homepage, an author's profile page)
-    to identify the URL and publication metadata of the most recent article or content item.
-    The specific method for finding this latest item (scraping, parsing, LLM extraction)
-    is determined by the `website_config`.
-
-    The information about the latest update, including its URL and publication time,
-    is stored in a cache associated with the `channel`. This cached data is intended
-    to be used by `get_latest_update_details` (Phase 2) to fetch the full content.
-
-    Args:
-        channel (str): A unique name identifying the website channel (e.g., "My Favorite Blog").
-                       Used for caching and logging.
-        source_url (str): The URL of the gateway page to check for updates (e.g.,
-                          a news site's homepage, a user's profile).
-        website_config (Dict[str, str]): A dictionary specifying the configuration
-                                         for this website. Essential keys include:
-                                         - 'gateway_scraper': Type of scraper for the gateway page.
-                                         - 'gateway_parser': Name of the parser for the gateway page
-                                                           (can be generic for LLM-based parsing).
-
-    Returns:
-        Optional[Dict[str, Any]]: A dictionary containing metadata about the latest update
-        if one is found and successfully processed. The dictionary includes:
-        - "channel" (str): The input channel name.
-        - "type" (str): Always "website".
-        - "published_at" (str): Publication timestamp of the latest content.
-        - "url" (str): The absolute URL of the latest content item.
-        - "source_url" (str): The input source_url.
-        Returns None if no update is found, if the gateway page cannot be processed,
-        or if essential information (like the latest content URL) is missing.
-    """
-    # Initialize cache
-    cache = ConnectorCache()
-    cache_key = generate_cache_key(channel)
-    
-    logger.info(f"Checking for updates from website: {source_url} for channel '{channel}' using gateway.find_latest_release")
-    
-    # Call gateway.find_latest_release to get the latest content information
-    # This encapsulates scraping the gateway, parsing, and LLM extraction.
-    latest_article_info = gateway.find_latest_release(
-        url=source_url,
-        scraper_type=website_config["gateway_scraper"],
-        gateway_parser_name=website_config.get("gateway_parser") # This can be None if generic markdownify parsing is intended
-    )
-
-    if not latest_article_info:
-        logger.warning(f"gateway.find_latest_release returned no information for {source_url}. Channel: '{channel}'.")
-        return None
-
-    # Prepare result for caching and return
-    result = {
-        "channel": channel,
-        "type": "website",
-        "published_at": latest_article_info.get('published_at'),
-        "url": latest_article_info.get('url'),
-        "source_url": source_url,
-    }
-    
-    # Cache the result
-    cache.save("website", cache_key, result)
-    
-    logger.success(f"Successfully found and cached latest content info for {channel}")
-    return result
-
-
-def get_latest_update_details(
-    channel: str,
-    website_config: Dict[str, str],
-) -> Optional[Dict[str, Any]]:
-    """
-    Retrieves and processes the full details of the latest content update for a channel.
-
-    This function represents Phase 2 of the content retrieval pipeline. It assumes that
-    `check_latest_updates` (Phase 1) has already run for the given `channel` and
-    cached url about the latest content to be retrieved.
-
-    This function then scrapes and processes that URL to extract the full content details 
-    (title, summary, estimated read time). The `content_scraper` specified in the
-    `website_config` is used for this purpose.
-
-    Args:
-        channel (str): The unique name of the website channel, matching the one used
-                       in `check_latest_updates`. Used to load cached data.
-        website_config (Dict[str, str]): A dictionary containing the website's
-                                         configuration. The key 'content_scraper'
-                                         is used to determine how to fetch the
-                                         actual content page.
-
-    Returns:
-        Optional[Dict[str, Any]]: A dictionary containing the full details of the
-        latest content if successfully retrieved and processed. The dictionary includes:
-        - "title" (str): The title of the content.
-        - "channel" (str): The input channel name.
-        - "type" (str): Always "website".
-        - "published_at" (str): Publication timestamp (from cached Phase 1 data).
-        - "url" (str): The URL of the content (from cached Phase 1 data).
-        - "duration" (str): Estimated read time of the content.
-        - "summary" (str): A summary of the content.
-        Returns None if the cached update information is not found, if the content
-        URL cannot be scraped, or if content processing fails.
-    """
-    try:
-        # Initialize cache
-        cache = ConnectorCache()
-        cache_key = generate_cache_key(channel)
-        
-        # Try to get latest update information from cache
-        latest_update = cache.load("website", cache_key)
-        
-        if not latest_update or 'url' not in latest_update:
-            logger.error(f"No update information found in cache for website channel {channel}")
+        base_url = extract_base_url(self.source_url)
+        if not base_url or base_url not in all_website_configs:
+            logger.error(f"No configuration found for base_url '{base_url}' (derived from {self.source_url}) for channel '{self.channel}'. Ensure config/website.toml has an entry for this base URL.")
             return None
             
-        # Process the content of the latest URL
-        content_url = latest_update['url']
-        content_result = content.scrape_and_process_content(
-            url=latest_update['url'],
-            scraper_type=website_config["content_scraper"],
-            content_parser=website_config["content_parser"]
-        )
-        
-        if not content_result:
-            logger.error(f"Failed to process latest content for {channel}: {content_url}")
+        site_config = all_website_configs[base_url].copy()
+        logger.info(f"Loaded scraper parameters for base_url {base_url} (channel {self.channel}): {site_config}")
+
+        required_keys = ["gateway_scraper", "content_scraper", "gateway_parser", "content_parser"]
+        missing_keys = [key for key in required_keys if key not in site_config]
+
+        if missing_keys:
+            error_msg = f"Configuration for base_url '{base_url}' in config/website.toml is missing keys: {missing_keys}. (Channel: '{self.channel}', Source: {self.source_url})"
+            logger.error(error_msg)
+            return None
+        return site_config
+
+    async def check_latest_updates(self) -> None:
+        """
+        Asynchronously checks a website source for its latest content URL and caches basic findings (Phase 1).
+        Does not return any data; saves to cache.
+        """
+        if not self.website_config:
+            logger.error(f"Website config not available for channel {self.channel}. Cannot check updates.")
+            return # Implicitly None
+
+        cache_key = self._generate_cache_key()
+        logger.info(f"Checking for updates from website: {self.source_url} for channel '{self.channel}'")
+
+        try:
+            latest_article_info = await asyncio.to_thread(
+                gateway.find_latest_release,
+                url=self.source_url,
+                scraper_type=self.website_config["gateway_scraper"],
+                gateway_parser_name=self.website_config.get("gateway_parser")
+            )
+
+            if not latest_article_info or not latest_article_info.get('url'):
+                logger.warning(f"gateway.find_latest_release returned no information or no URL for {self.source_url}. Channel: '{self.channel}'.")
+                return # Implicitly None
+
+            phase1_result = {
+                "channel": self.channel,
+                "type": "website",
+                "published_at": latest_article_info.get('published_at'),
+                "url": latest_article_info.get('url'),
+                "source_url": self.source_url,
+            }
+            
+            self.cache.save("website", cache_key, phase1_result) # Cache the phase 1 result
+            content_url_cached = phase1_result.get('url')
+            logger.success(f"Website: Found and cached latest content info for {self.channel}: URL {content_url_cached}")
+            # No return value
+        except Exception as e:
+            logger.error(f"Error during check_latest_updates for {self.channel} ({self.source_url}): {e}", exc_info=True)
+            # No return value
+
+    async def get_latest_update_details(self) -> Optional[Dict[str, Any]]:
+        """
+        Asynchronously retrieves and processes the full details of the latest content update for the channel.
+        It relies on check_latest_updates having cached the Phase 1 data (including the content URL).
+        """
+        if not self.website_config:
+            logger.error(f"Website config not available for channel {self.channel}. Cannot get update details.")
             return None
         
-        # Combine all results
-        result = {
-            "title": content_result['title'],
-            "channel": channel,
-            "type": "website",
-            "published_at": latest_update['published_at'],
-            "url": content_url,
-            "duration": content_result['read_time'],
-            "summary": content_result['summary'],
-        }
-        
-        logger.success(f"Successfully retrieved content for {channel}")
-        return result
-        
-    except Exception as e:
-        logger.error(f"Error retrieving content for website {channel}: {e}")
-        return None
+        cache_key_for_channel = self._generate_cache_key()
+        cached_phase1_data = self.cache.load("website", cache_key_for_channel)
 
-
-def prepare_website_processing_config(subscription_config: Dict[str, Any]) -> Optional[Dict[str, Any]]:
-    """Prepares and validates necessary configurations for website processing.
-
-    Args:
-        subscription_config: A dictionary containing channel and source_url.
-
-    Returns:
-        A dictionary with 'channel', 'source_url', and 'site_config' if successful, else None.
-    """
-    # 1. Load all website configurations from config/website.toml
-    try:
-        all_website_configs = _load_website_configs()
-        if not all_website_configs:
-            logger.error("Failed to load website configurations or config is empty.")
+        if not cached_phase1_data or not cached_phase1_data.get('url'):
+            logger.warning(f"No valid Phase 1 cached data (or missing URL) found for channel {self.channel} (cache key {cache_key_for_channel}). Run check_latest_updates first.")
             return None
-    except (FileNotFoundError, tomllib.TOMLDecodeError) as e:
-        logger.error(f"Critical error loading config/website.toml: {e}")
-        return None
 
-    # 2. Determine base_url
-    source_url = subscription_config.get("source_url")
-    base_url = extract_base_url(source_url)
+        content_url_str = cached_phase1_data.get('url')
+        published_at_from_cache = cached_phase1_data.get('published_at')
+        source_url_from_cache = cached_phase1_data.get('source_url', self.source_url) # Fallback
 
-    # 3. Get the scraper configuration for this specific base_url   
-    site_config = all_website_configs[base_url].copy()
-    logger.info(f"Loaded scraper parameters for base_url {base_url}: {site_config}")
+        logger.info(f"Getting latest update details for channel '{self.channel}' using cached content URL: {content_url_str}")
 
-    # 5. Validate that essential scraper configuration keys are present
-    required_keys = ["gateway_scraper", "content_scraper", "gateway_parser", "content_parser"]
-    missing_keys = [key for key in required_keys if key not in site_config]
+        try:
+            content_result = await asyncio.to_thread(
+                content.scrape_and_process_content,
+                url=content_url_str,
+                scraper_type=self.website_config["content_scraper"],
+                content_parser=self.website_config["content_parser"]
+            )
+            
+            if not content_result:
+                logger.error(f"Failed to process latest content for {self.channel} from URL: {content_url_str}")
+                return None
+            
+            result = {
+                "title": content_result.get('title'),
+                "channel": self.channel,
+                "type": "website",
+                "published_at": published_at_from_cache,
+                "url": content_url_str,
+                "duration": content_result.get('read_time'),
+                "summary": content_result.get('summary'),
+                "full_text_markdown": content_result.get('markdown_content'),
+                "source_url": source_url_from_cache
+            }
+            
+            logger.success(f"Successfully retrieved content details for {self.channel} from URL: {content_url_str}")
+            return result
+            
+        except Exception as e:
+            logger.error(f"Error retrieving content details for {self.channel} ({content_url_str}): {e}", exc_info=True)
+            return None
 
-    if missing_keys:
-        error_msg = f"Configuration for base_url '{base_url}' in config/website.toml is missing keys: {missing_keys}. (Channel: '{channel}', Source: {source_url})"
-        logger.error(error_msg)
-        return None
-
-    return site_config
-
-
-def main():
+async def main():
     """Demonstrate the two-phase website content retrieval approach."""
-    # Example website channel from subscriptions.toml (conceptually)
-    # In a real scenario, this would come from iterating through subscriptions.toml
-    subscription_config = {
-        "channel": "有数DataVision (36氪)",
-        "source_url": "https://36kr.com/user/5294205",
+    example_subscription = {
+        "channel": "远川科技评论 (36氪)",
+        "source_url": "https://36kr.com/user/5060931",
     }
+    
+    channel = example_subscription["channel"]
+    source_url = example_subscription["source_url"]
 
-    site_config = prepare_website_processing_config(subscription_config)
+    logger.info(f"Demonstrating two-phase approach for website channel: {channel} ({source_url})")
 
-    if not site_config:
-        logger.error("Failed to prepare website processing configurations. Aborting demo.")
-        return
-
-    channel = subscription_config["channel"]
-    source_url = subscription_config["source_url"]
-    
-    logger.info(f"Demonstrating two-phase approach for website channel: {channel}")
-    logger.info(f"Using scraper parameters from config/website.toml: {site_config}")
-    
-    # PHASE 1: Check for updates
-    logger.info("\n=== Phase 1: Check for updates ===")
-    logger.info("In this phase, we scrape the gateway page to find the latest content URL.")
-    latest_update = check_latest_updates(
-        channel=channel,
-        source_url=source_url,
-        website_config=site_config,
-    )
-    
-    if not latest_update:
-        logger.error("Failed to find latest content")
-        return
-        
-    logger.info(f"Found latest content URL: {latest_update['url']}")
-    logger.info(f"Published: {latest_update['published_at']}")
-    
-    # PHASE 2: Get full content details
-    logger.info("\n=== Phase 2: Get full content details ===")
-    logger.info("In this phase, we process and retrieve the full content details from the URL in cache.")
     try:
-        full_content = get_latest_update_details(
-            channel=channel,
-            website_config=site_config,
-        )
-        
-        if not full_content:
-            logger.error("Failed to retrieve content details")
-            return
-            
-        logger.info(f"Retrieved content: {full_content['title']}")
-        logger.info(f"Reading time: {full_content['duration']}")
-        logger.info(f"Summary: {full_content['summary'][:150]}...")
+        connector = WebsiteConnector(channel=channel, source_url=source_url)
     except ValueError as e:
-        logger.error(f"Error retrieving content details: {e}")
+        logger.error(f"Error initializing connector: {e}")
+        return
+    except (FileNotFoundError, tomllib.TOMLDecodeError) as e:
+        logger.error(f"Critical error loading website configurations: {e}")
+        return
 
-    logger.success(f"Finished running website pipeline for {source_url}")
+    logger.info("\n=== Phase 1: Check for updates (caches data) ===")
+    await connector.check_latest_updates() # Call it, no return value
+    
+    logger.info("Cache should now be populated if updates were found.")
 
+    logger.info("\n=== Phase 2: Get content details from cache ===")
+    full_content_details = await connector.get_latest_update_details() # No argument
+    
+    if full_content_details:
+        logger.info(f"Retrieved full content for {channel}:")
+        logger.info(f"  Title: {full_content_details.get('title', 'N/A')}")
+        logger.info(f"  Published: {full_content_details.get('published_at', 'N/A')}")
+        logger.info(f"  URL: {full_content_details.get('url')}")
+        logger.info(f"  Est. Read Time: {full_content_details.get('duration', 'N/A')}")
+        summary = full_content_details.get('summary', '')
+        logger.info(f"  Summary: {summary[:200] + '...' if summary and len(summary) > 200 else summary}")
+    else:
+        logger.error(f"Error retrieving full content details for {channel}. Was cache populated?")
 
 if __name__ == "__main__":
-    main() 
+    asyncio.run(main()) 

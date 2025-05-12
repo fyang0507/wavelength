@@ -19,230 +19,156 @@ from datetime import datetime
 import json
 import subprocess
 from utils.logging_config import logger
-from typing import Dict, Any, Optional, Union
+from typing import Dict, Any, Optional
 from utils.connector_cache import ConnectorCache
+import asyncio
+from connectors.sources.base_source import SourceConnector
 
-# User agent header for API requests
-USER_AGENT = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/16.0 Safari/605.1.15"
 
-def generate_cache_key(channel_name: str) -> str:
+class BilibiliConnector(SourceConnector):
     """
-    Generate a standardized cache key for Bilibili data.
-    
-    Args:
-        channel_name: The name of the Bilibili channel
-        
-    Returns:
-        A standardized cache key
+    Connector for fetching the most recent videos from a Bilibili user.
     """
-    # Convert channel name to lowercase and replace spaces with underscores
-    normalized_name = channel_name.lower().replace(' ', '_')
-    
-    # Return the normalized name as the cache key
-    # Note: The date will be added by ConnectorCache
-    return normalized_name
+    USER_AGENT = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/16.0 Safari/605.1.15"
 
-def check_latest_updates(uid: int, channel_name: str) -> Optional[Dict[str, Any]]:
-    """
-    Check for updates from a Bilibili user and cache the latest video metadata.
-    
-    Args:
-        uid: Bilibili user ID
-        channel_name: Display name for the channel
+    def __init__(self, uid: int, channel: str):
+        super().__init__(source_identifier=channel)
+        self.uid = uid
+        self.channel = channel
+        self.cache = ConnectorCache()
+
+    async def check_latest_updates(self) -> None:
+        """
+        Check for updates from a Bilibili user and cache the latest video metadata.
+        Does not return any data; saves to cache.
+        """
+        cache_key = self._generate_cache_key()
         
-    Returns:
-        Dict containing metadata for the latest video or None if error
-    """
-    # Initialize cache
-    cache = ConnectorCache()
-    cache_key = generate_cache_key(channel_name)
-    
-    try:
-        # Get the latest video (limit=1)
-        response = get_user_videos(uid, page_size=1)
-        
-        if response.get("code") != 0:
-            logger.error(f"Error fetching videos for Bilibili user '{channel_name}': {response.get('message', 'Unknown error')}")
-            return None
+        try:
+            response = self._get_user_videos(self.uid, page_size=1)
             
-        # Check response structure
-        if "data" not in response or "archives" not in response["data"]:
-            logger.error(f"Unexpected response structure for Bilibili user '{channel_name}'")
-            return None
+            if response.get("code") != 0:
+                logger.error(f"Error fetching videos for Bilibili user '{self.channel}': {response.get('message', 'Unknown error')}")
+                return
+                
+            if "data" not in response or "archives" not in response["data"]:
+                logger.error(f"Unexpected response structure for Bilibili user '{self.channel}'")
+                return
+                
+            videos = response["data"]["archives"]
+            if not videos:
+                logger.warning(f"No videos found for Bilibili user '{self.channel}'")
+                return
             
-        videos = response["data"]["archives"]
-        if not videos:
-            logger.warning(f"No videos found for Bilibili user '{channel_name}'")
+            latest_video = videos[0]
+            result = self._format_video_data(latest_video)
+            if not result:
+                logger.error(f"Error formatting video data for Bilibili user '{self.channel}'")
+                return
+            
+            result["type"] = "bilibili"
+            result["channel"] = self.channel
+            
+            self.cache.save("bilibili", cache_key, result)
+            logger.success(f"Bilibili: Found and cached video '{result.get('title')}' (BVID: {result.get('bvid')}) for channel {self.channel}")
+            
+        except Exception as e:
+            logger.error(f"Error checking updates for Bilibili user '{self.channel}': {e}", exc_info=True)
+
+    async def get_latest_update_details(self) -> Optional[Dict[str, Any]]:
+        """
+        Get full content and metadata for the latest Bilibili video by loading from cache.
+        Assumes check_latest_updates has populated the cache for this channel.
+        """
+        cache_key = self._generate_cache_key()
+        cached_channel_data = self.cache.load("bilibili", cache_key)
+
+        if cached_channel_data:
+             logger.info(f"Returning cached data for Bilibili channel {self.channel}, BVID: {cached_channel_data.get('bvid')}")
+             return cached_channel_data
+        else:
+            logger.warning(f"No cached data found for Bilibili channel {self.channel} (cache key: {cache_key}). Run check_latest_updates first.")
             return None
-        
-        # Get the latest video
-        latest_video = videos[0]
-        
-        # Format the video data
-        result = format_video_data(latest_video)
-        if not result:
-            logger.error(f"Error formatting video data for Bilibili user '{channel_name}'")
+
+    def _get_user_videos(self, mid: int, page_size: int = 5, page_num: int = 1) -> Dict[str, Any]:
+        """
+        Fetch videos for a specific Bilibili user using curl.
+        """
+        url = "https://api.bilibili.com/x/series/recArchivesByKeywords"
+        curl_cmd = [
+            "curl", "-s", "-G", url,
+            "--data-urlencode", f"mid={mid}",
+            "--data-urlencode", "keywords=",
+            "--data-urlencode", f"ps={page_size}",
+            "--data-urlencode", f"pn={page_num}",
+            "--data-urlencode", "orderby=pubdate"
+        ]
+        logger.info(f"Executing curl command: {' '.join(curl_cmd)}")
+        try:
+            result = subprocess.run(curl_cmd, capture_output=True, text=True, check=True)
+            if result.stderr:
+                logger.warning(f"Curl stderr: {result.stderr}")
+            response = json.loads(result.stdout)
+            logger.info(f"Response code: {response.get('code')}")
+            logger.info(f"Response message: {response.get('message')}")
+            return response
+        except subprocess.CalledProcessError as e:
+            logger.error(f"Curl command failed with exit code {e.returncode}")
+            logger.error(f"Stderr: {e.stderr}")
+            return {"code": -1, "message": f"Curl command failed: {e}", "data": {"archives": [], "page": {"total": 0}}}
+        except json.JSONDecodeError as e:
+            logger.error(f"Failed to parse JSON response: {e}")
+            logger.error(f"Response content: {result.stdout[:500]}...")
+            return {"code": -1, "message": f"JSON parsing failed: {e}", "data": {"archives": [], "page": {"total": 0}}}
+
+    def _format_video_data(self, video: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+        """
+        Extract and format relevant video information.
+        """
+        try:
+            logger.info(f"Formatting video data: {video}")
+            return {
+                "aid": video.get("aid"),
+                "bvid": video.get("bvid"),
+                "title": video.get("title"),
+                "published_at": datetime.fromtimestamp(video.get("pubdate", 0)).date().isoformat() if video.get("pubdate") else None,
+                "duration": video.get("duration"),
+                "stats": {
+                    "view_count": video.get("stat", {}).get("view", 0),
+                },
+                "thumbnail": video.get("pic"),
+                "url": f"https://www.bilibili.com/video/{video.get('bvid')}"
+            }
+        except Exception as e:
+            logger.error(f"Error formatting video data: {e}")
+            logger.error(f"Video data: {json.dumps(video, indent=2, ensure_ascii=False)[:500]}...")
             return None
-        
-        # Add channel information
-        result["type"] = "bilibili"
-        result["channel"] = channel_name
-        
-        # Cache the result
-        cache.save("bilibili", cache_key, result)
-        
-        return result
-        
-    except Exception as e:
-        logger.error(f"Error checking updates for Bilibili user '{channel_name}': {e}")
-        return None
 
-def get_latest_update_details(channel_name: str) -> Dict[str, Any]:
-    """
-    Get full content and metadata for the latest Bilibili video from cache.
-    Does not implement fetching logic - only retrieves from cache.
-    
-    Args:
-        channel_name: Name of the Bilibili channel
-        
-    Returns:
-        Dict containing complete metadata for the latest video
-        
-    Raises:
-        ValueError: If video not found in cache
-    """
-    if not channel_name:
-        raise ValueError("Channel name is required to get video content from cache")
-    
-    # Try to get from cache
-    cache = ConnectorCache()
-    cache_key = generate_cache_key(channel_name)
-    cached_data = cache.load("bilibili", cache_key)
-    
-    # Check if we found cached data
-    if cached_data:
-        logger.info(f"Using cached data for Bilibili channel: {channel_name}")
-        return cached_data
-    
-    # If we reach here, the video was not in cache
-    error_msg = f"No video found in cache for Bilibili channel {channel_name}"
-    logger.error(error_msg)
-    raise ValueError(error_msg)
-
-def get_user_videos(mid: int, page_size: int = 5, page_num: int = 1) -> Dict[str, Any]:
-    """
-    Fetch videos for a specific Bilibili user using curl.
-    
-    Args:
-        mid: The Bilibili user ID
-        page_size: Number of videos per page
-        page_num: Page number to fetch
-        
-    Returns:
-        Dict containing the API response
-    """
-    url = "https://api.bilibili.com/x/series/recArchivesByKeywords"
-    
-    # Build the curl command
-    curl_cmd = [
-        "curl", "-s", "-G", url,
-        "--data-urlencode", f"mid={mid}", # mid is the user ID
-        "--data-urlencode", "keywords=", # empty keywords means all videos from the user
-        "--data-urlencode", f"ps={page_size}",
-        "--data-urlencode", f"pn={page_num}",
-        "--data-urlencode", "orderby=pubdate" # sort by publication date
-    ]
-    
-    logger.info(f"Executing curl command: {' '.join(curl_cmd)}")
-    
-    try:
-        # Execute the curl command and capture the output
-        result = subprocess.run(curl_cmd, capture_output=True, text=True, check=True)
-        
-        if result.stderr:
-            logger.warning(f"Curl stderr: {result.stderr}")
-        
-        # Parse the JSON response
-        response = json.loads(result.stdout)
-        
-        logger.info(f"Response code: {response.get('code')}")
-        logger.info(f"Response message: {response.get('message')}")
-        return response
-    
-    except subprocess.CalledProcessError as e:
-        logger.error(f"Curl command failed with exit code {e.returncode}")
-        logger.error(f"Stderr: {e.stderr}")
-        return {"code": -1, "message": f"Curl command failed: {e}", "data": {"archives": [], "page": {"total": 0}}}
-    
-    except json.JSONDecodeError as e:
-        logger.error(f"Failed to parse JSON response: {e}")
-        logger.error(f"Response content: {result.stdout[:500]}...")  # Print first 500 chars
-        return {"code": -1, "message": f"JSON parsing failed: {e}", "data": {"archives": [], "page": {"total": 0}}}
-
-
-def format_video_data(video: Dict[str, Any]) -> Optional[Dict[str, Any]]:
-    """
-    Extract and format relevant video information.
-    
-    Args:
-        video: Raw video data from API
-        
-    Returns:
-        Dict with formatted video information or None if error
-    """
-    try:
-        logger.info(f"Formatting video data: {video}")
-        return {
-            "aid": video.get("aid"),
-            "bvid": video.get("bvid"),
-            "title": video.get("title"),
-            "published_at": datetime.fromtimestamp(video.get("pubdate", 0)).date().isoformat() if video.get("pubdate") else None,
-            "duration": video.get("duration"), # in seconds
-            "stats": {
-                "view_count": video.get("stat", {}).get("view", 0),
-            },
-            "thumbnail": video.get("pic"),
-            "url": f"https://www.bilibili.com/video/{video.get('bvid')}"
-        }
-    except Exception as e:
-        logger.error(f"Error formatting video data: {e}")
-        logger.error(f"Video data: {json.dumps(video, indent=2, ensure_ascii=False)[:500]}...")
-        return None
-
-
-def main():
+async def main():
     """Example demonstrating the two-phase Bilibili content retrieval approach."""
-    # Example Bilibili channel
-    uid = 946974  # 影视飓风 (Film Hurricanes)
-    channel_name = "影视飓风"
+    uid = 946974
+    channel = "影视飓风"
     
-    print(f"Demonstrating two-phase approach for Bilibili channel: {channel_name}")
+    connector = BilibiliConnector(uid, channel)
+
+    logger.info(f"Demonstrating two-phase approach for Bilibili channel: {channel}")
     
-    # PHASE 1: Check for updates
-    print("\n=== Phase 1: Check for updates ===")
-    print("In this phase, we check for new videos and cache complete data.")
-    latest = check_latest_updates(uid, channel_name)
+    logger.info("=== Phase 1: Check for updates (caches data) ===")
+    await connector.check_latest_updates()
     
-    if not latest:
-        print("No videos found")
-        return
-        
-    print(f"Found latest video: {latest['title']}")
-    print(f"Published: {latest['published_at']}")
-    print(f"URL: {latest['url']}")
+    logger.info("Cache should now be populated if updates were found.")
+
+    logger.info("=== Phase 2: Get content from cache/details ===")
+    full_content = await connector.get_latest_update_details()
     
-    # PHASE 2: Get full content from cache
-    print("\n=== Phase 2: Get content from cache ===")
-    print("In this phase, we retrieve the full content from cache without re-fetching.")
-    try:
-        full_content = get_latest_update_details(channel_name)
-        print(f"Retrieved from cache: {full_content['title']}")
-        print(f"Duration: {full_content.get('duration', 'N/A')}s")
-        print(f"URL: {full_content['url']}")
-        print(f"Views: {full_content['stats'].get('view_count', 'N/A')}")
-    except ValueError as e:
-        print(f"Error retrieving from cache: {e}")
+    if full_content:
+        logger.info(f"Retrieved details: {full_content.get('title')}")
+        logger.info(f"Duration: {full_content.get('duration', 'N/A')}s")
+        logger.info(f"URL: {full_content.get('url')}")
+        logger.info(f"Views: {full_content.get('stats', {}).get('view_count', 'N/A')}")
+    else:
+        logger.error(f"Error retrieving full content details for Bilibili channel: {channel}. Was cache populated?")
 
 
 if __name__ == "__main__":
-    main() 
+    asyncio.run(main()) 

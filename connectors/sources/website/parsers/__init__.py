@@ -39,7 +39,7 @@ def get_parser(parser_name: str) -> Optional[BaseParser]:
         conventional_class_name = f"{module_name_lower.replace('_', ' ').title().replace(' ', '')}Parser"
 
     try:
-        module_path = f"connectors.website.parsers.{module_name_lower}"
+        module_path = f"connectors.sources.website.parsers.{module_name_lower}"
         module = importlib.import_module(module_path)
         
         parser_class_to_instantiate = None

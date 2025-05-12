@@ -4,13 +4,12 @@ Script to crawl website content, generate a summary using LLM, and estimate read
 Combines functionality from website scraping, LLM summarization, and reading time estimation.
 """
 
-from connectors.website.parsers.base import BaseParser
 from utils.logging_config import logger
 import tomllib
 from pathlib import Path
 from services.llm import api_text_completion
-from connectors.website.scrapers import get_scraper
-from connectors.website.parsers import get_parser
+from connectors.sources.website.scrapers import get_scraper
+from connectors.sources.website.parsers import get_parser
 from utils.read_time_estimate import estimate_read_time
 from utils.llm_response_format import parse_bullet_points
 from typing import Optional, Dict, Any

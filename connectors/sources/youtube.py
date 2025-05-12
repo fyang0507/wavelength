@@ -33,331 +33,273 @@ from datetime import datetime
 from dotenv import load_dotenv
 import os
 from utils.logging_config import logger
-from typing import Dict, Any, Optional, Union
+from typing import Dict, Any, Optional
 from utils.connector_cache import ConnectorCache
+import asyncio
+from connectors.sources.base_source import SourceConnector
 
-def generate_cache_key(channel_name: str) -> str:
+class YoutubeConnector(SourceConnector):
     """
-    Generate a standardized cache key for YouTube channel data.
-    
-    Args:
-        channel_name: The name of the YouTube channel
-        
-    Returns:
-        A standardized cache key
+    Connector for fetching content from YouTube channels.
     """
-    # Convert channel name to lowercase, remove @ if present, and replace spaces with underscores
-    normalized_name = channel_name.lstrip('@').lower().replace(' ', '_')
-    
-    # Return the normalized name as the cache key
-    # Note: The date will be added by ConnectorCache
-    return normalized_name
-
-def check_latest_updates(channel_name: str, api_key: str, duration_min: int = 300) -> Optional[Dict[str, Any]]:
-    """
-    Check for updates from a YouTube channel and cache the latest video metadata.
-    
-    Args:
-        channel_name: YouTube channel name or handle (with or without '@')
-        api_key: YouTube Data API key
-        duration_min: Minimum duration in seconds for videos to include (default: 300, i.e., 5 minutes)
-                     Set to 0 to include all videos regardless of duration
+    def __init__(self, channel: str, duration_min: int = 300):
+        """
+        Initialize the YouTube connector with a channel name and duration minimum.
         
-    Returns:
-        Dict containing metadata for the latest video or None if error
-    """
-    # Initialize cache
-    cache = ConnectorCache()
-    cache_key = generate_cache_key(channel_name)
-    
-    try:
-        # Get channel ID
-        channel_id = get_channel_id_from_name(channel_name, api_key)
-        if not channel_id:
-            logger.error(f"Could not find channel ID for '{channel_name}'")
-            return None
+        Args:
+            channel: The name of the YouTube channel to fetch content from.
+            duration_min: The minimum duration of videos to fetch in seconds (to avoid shorts).
+        """
+        super().__init__(source_identifier=channel)
+        self.channel = channel
+        self.duration_min = duration_min
+        self.cache = ConnectorCache()
         
-        # Get the latest video metadata
-        metadata = get_latest_video_metadata(channel_id, api_key, duration_min)
-        if not metadata:
-            logger.warning(f"No suitable videos found for channel: {channel_name}")
-            return None
-        
-        # Add channel information
-        metadata["type"] = "youtube"
-        metadata["channel"] = channel_name
-        
-        # Cache the result
-        cache.save("youtube", cache_key, metadata)
-        
-        return metadata
-        
-    except Exception as e:
-        logger.error(f"Error checking updates for YouTube channel '{channel_name}': {e}")
-        return None
-
-def get_latest_update_details(channel_name: str) -> Dict[str, Any]:
-    """
-    Get full content and metadata for the latest YouTube video from cache.
-    Does not implement fetching logic - only retrieves from cache.
-    
-    Args:
-        channel_name: Name of the YouTube channel
-        
-    Returns:
-        Dict containing complete metadata for the latest video
-        
-    Raises:
-        ValueError: If video not found in cache
-    """
-    if not channel_name:
-        raise ValueError("Channel name is required to get video content from cache")
-    
-    # Try to get from cache
-    cache = ConnectorCache()
-    cache_key = generate_cache_key(channel_name)
-    cached_data = cache.load("youtube", cache_key)
-    
-    # Check if we found cached data
-    if cached_data:
-        logger.info(f"Using cached data for YouTube channel: {channel_name}")
-        return cached_data
-    
-    # If we reach here, the video was not in cache
-    error_msg = f"No video found in cache for YouTube channel {channel_name}"
-    logger.error(error_msg)
-    raise ValueError(error_msg)
-
-def get_channel_id_from_name(channel_name, api_key):
-    """
-    Get channel ID from channel name/handle
-    
-    Args:
-        channel_name (str): YouTube channel name or handle (with or without '@')
-        api_key (str): YouTube Data API key
-    
-    Returns:
-        str: Channel ID or None if not found
-    """
-    try:
-        # Remove @ symbol if present
-        channel_name = channel_name.lstrip('@')
-        
-        youtube = build('youtube', 'v3', developerKey=api_key)
-        
-        # Search for the channel
-        request = youtube.search().list(
-            part='snippet',
-            q=channel_name,
-            type='channel',
-            maxResults=1
-        ).execute()
-        
-        if not request['items']:
-            logger.warning(f"No channel found for name: {channel_name}")
-            return None
+        load_dotenv() # Ensure environment variables are loaded
+        self.api_key = os.getenv('YOUTUBE_API_KEY')
+        if not self.api_key:
+            logger.critical("YOUTUBE_API_KEY not found in environment variables. YoutubeConnector cannot function.")
+            raise ValueError("YOUTUBE_API_KEY not found in environment variables.")
             
-        channel_id = request['items'][0]['id']['channelId']
-        
-        # Verify if this is the exact channel by checking the handle/name
-        channel_response = youtube.channels().list(
-            part='snippet',
-            id=channel_id
-        ).execute()
-        
-        if channel_response['items']:
-            channel_info = channel_response['items'][0]['snippet']
-            # Check if either custom URL or title matches
-            if (channel_name.lower() in channel_info.get('customUrl', '').lower() or 
-                channel_name.lower() in channel_info['title'].lower()):
-                logger.info(f"Found channel ID: {channel_id} for channel: {channel_name}")
-                return channel_id
-                
-        logger.warning(f"Found a channel but it doesn't match the requested name: {channel_name}")
-        return None
-        
-    except Exception as e:
-        logger.error(f"Error finding channel ID for {channel_name}: {str(e)}")
-        return None
+        self.youtube_service = build('youtube', 'v3', developerKey=self.api_key)
 
+    def _get_youtube_service(self):
+        if not self.youtube_service:
+            self.youtube_service = build('youtube', 'v3', developerKey=self.api_key)
+        return self.youtube_service
 
-def get_latest_video_metadata(channel_id, api_key, duration_min=300):
-    """
-    Fetch metadata of the latest video from a YouTube channel
-    
-    Args:
-        channel_id (str): The YouTube channel ID
-        api_key (str): Your YouTube Data API key
-        duration_min (int): Minimum duration in seconds for videos to include (default: 300, i.e., 5 minutes)
-                            Set to 0 to include all videos regardless of duration
-    
-    Returns:
-        dict: Video metadata or None if error occurs
-    """
-    try:
-        logger.info(f"Fetching videos for channel ID: {channel_id} with min duration: {duration_min}s")
-        # Create YouTube API client
-        youtube = build('youtube', 'v3', developerKey=api_key)
-        
-        # First, get the uploads playlist ID of the channel
-        channel_response = youtube.channels().list(
-            part='contentDetails',
-            id=channel_id
-        ).execute()
-        
-        if not channel_response.get('items'):
-            logger.error(f"Channel ID {channel_id} not found or has no content details")
-            return None
+    async def check_latest_updates(self) -> None:
+        """
+        Check for updates from a YouTube channel and cache the latest video metadata.
+        Does not return any data; saves to cache.
+        """
+        cache_key = self._generate_cache_key()
+        try:
+            channel_id = self._get_channel_id_from_name(self.channel)
+            if not channel_id:
+                logger.error(f"Could not find channel ID for '{self.channel}'")
+                return # Implicitly None
             
-        uploads_playlist_id = channel_response['items'][0]['contentDetails']['relatedPlaylists']['uploads']
-        logger.info(f"Found uploads playlist ID: {uploads_playlist_id}")
-        
-        # Get videos from uploads playlist (fetch more to filter through if needed)
-        max_results = 10 if duration_min > 0 else 1
-        playlist_response = youtube.playlistItems().list(
-            part='snippet',
-            playlistId=uploads_playlist_id,
-            maxResults=max_results
-        ).execute()
-        
-        if not playlist_response['items']:
-            logger.warning(f"No videos found in uploads playlist for channel ID: {channel_id}")
-            return None
-        
-        # If not filtering by duration, just return the latest video
-        if duration_min <= 0:
-            logger.info("No duration filter applied, returning latest video")
-            video_data = playlist_response['items'][0]['snippet']
-            video_id = video_data['resourceId']['videoId']
+            metadata = self._get_latest_video_metadata(channel_id, self.duration_min)
+            if not metadata:
+                logger.warning(f"No suitable videos found for channel: {self.channel}")
+                return # Implicitly None
             
-            # Get video details
-            video_details = youtube.videos().list(
-                part='contentDetails,statistics',
-                id=video_id
-            ).execute()
+            metadata["type"] = "youtube"
+            metadata["channel"] = self.channel
+            self.cache.save("youtube", cache_key, metadata) # Cache the full metadata
+            logger.success(f"YouTube: Found and cached video '{metadata.get('title')}' (ID: {metadata.get('video_id')}) for channel {self.channel}")
+            # No return value
+        except Exception as e:
+            logger.error(f"Error checking updates for YouTube channel '{self.channel}': {e}", exc_info=True)
+            # No return value
+
+    async def get_latest_update_details(self) -> Optional[Dict[str, Any]]:
+        """
+        Get full content and metadata for the latest YouTube video by loading from cache.
+        Assumes check_latest_updates has populated the cache for this channel.
+        """
+        cache_key = self._generate_cache_key() # Cache key for the channel
+        cached_channel_data = self.cache.load("youtube", cache_key)
+
+        if cached_channel_data:
+            logger.info(f"Returning cached data for YouTube channel {self.channel}, Video Title: {cached_channel_data.get('title')}")
+            return cached_channel_data
         else:
-            # Process videos to find the first one meeting the duration requirement
-            videos_checked = 0
-            for item in playlist_response['items']:
-                videos_checked += 1
-                video_data = item['snippet']
-                video_id = video_data['resourceId']['videoId']
+            logger.warning(f"No cached data found for YouTube channel {self.channel} (cache key: {cache_key}). Run check_latest_updates first.")
+            return None
+
+    def _get_channel_id_from_name(self, channel_to_find: str) -> Optional[str]:
+        """
+        Get channel ID from channel name/handle
+        """
+        try:
+            channel_processed = channel_to_find.lstrip('@')
+            youtube = self._get_youtube_service()
+            
+            request = youtube.search().list(
+                part='snippet',
+                q=channel_processed,
+                type='channel',
+                maxResults=1
+            ).execute()
+            
+            if not request['items']:
+                logger.warning(f"No channel found for name: {channel_to_find}")
+                return None
+            
+            channel_id = request['items'][0]['id']['channelId']
+            
+            channel_response = youtube.channels().list(
+                part='snippet',
+                id=channel_id
+            ).execute()
+            
+            if channel_response['items']:
+                channel_info = channel_response['items'][0]['snippet']
+                if (channel_processed.lower() in channel_info.get('customUrl', '').lower() or 
+                    channel_processed.lower() in channel_info['title'].lower()):
+                    logger.info(f"Found channel ID: {channel_id} for channel: {channel_to_find}")
+                    return channel_id
+            
+            logger.warning(f"Found a channel but it doesn't match the requested name: {channel_to_find}")
+            return None
+        except Exception as e:
+            logger.error(f"Error finding channel ID for {channel_to_find}: {str(e)}")
+            return None
+
+    def _get_latest_video_metadata(self, channel_id: str, duration_min_val: int) -> Optional[Dict[str, Any]]:
+        """
+        Fetch metadata of the latest video from a YouTube channel
+        """
+        try:
+            logger.info(f"Fetching videos for channel ID: {channel_id} with min duration: {duration_min_val}s")
+            youtube = self._get_youtube_service()
+            
+            channel_response = youtube.channels().list(
+                part='contentDetails',
+                id=channel_id
+            ).execute()
+            
+            if not channel_response.get('items'):
+                logger.error(f"Channel ID {channel_id} not found or has no content details")
+                return None
                 
-                logger.info(f"Checking video ID: {video_id}, Title: {video_data['title']}")
-                
-                # Get video details
-                video_details = youtube.videos().list(
+            uploads_playlist_id = channel_response['items'][0]['contentDetails']['relatedPlaylists']['uploads']
+            logger.info(f"Found uploads playlist ID: {uploads_playlist_id}")
+            
+            max_results = 10 if duration_min_val > 0 else 1
+            playlist_response = youtube.playlistItems().list(
+                part='snippet',
+                playlistId=uploads_playlist_id,
+                maxResults=max_results
+            ).execute()
+            
+            if not playlist_response['items']:
+                logger.warning(f"No videos found in uploads playlist for channel ID: {channel_id}")
+                return None
+            
+            video_to_return = None
+
+            if duration_min_val <= 0:
+                logger.info("No duration filter applied, taking the latest video")
+                video_data_item = playlist_response['items'][0]
+                video_id = video_data_item['snippet']['resourceId']['videoId']
+                video_details_response = youtube.videos().list(
                     part='contentDetails,statistics,snippet',
                     id=video_id
                 ).execute()
-                
-                if not video_details['items']:
-                    logger.warning(f"Could not retrieve details for video ID: {video_id}")
-                    continue
-                
-                # Parse ISO 8601 duration to seconds
-                duration_str = video_details['items'][0]['contentDetails']['duration']
-                duration_seconds = 0
-                
-                # Extract hours if present
-                if 'H' in duration_str:
-                    hours = int(duration_str.split('H')[0].split('T')[1])
-                    duration_seconds += hours * 3600
-                    duration_str = duration_str.split('H')[1]
-                else:
-                    duration_str = duration_str.split('T')[1]
-                
-                # Extract minutes if present
-                if 'M' in duration_str:
-                    minutes = int(duration_str.split('M')[0])
-                    duration_seconds += minutes * 60
-                    duration_str = duration_str.split('M')[1]
-                
-                # Extract seconds if present
-                if 'S' in duration_str:
-                    seconds = int(duration_str.split('S')[0])
-                    duration_seconds += seconds
-                
-                logger.info(f"Video '{video_data['title']}' has duration: {duration_seconds}s (requirement: {duration_min}s)")
-                
-                # Check if video meets the minimum duration requirement
-                if duration_seconds >= duration_min:
-                    # Check for #Shorts hashtag as an additional filter
-                    title = video_details['items'][0]['snippet']['title'].lower()
-                    description = video_details['items'][0]['snippet']['description'].lower()
-                    has_shorts_hashtag = '#shorts' in title or '#shorts' in description or '#short' in title or '#short' in description
-                    
-                    if has_shorts_hashtag:
-                        logger.info(f"Video '{video_data['title']}' has required duration but contains #shorts hashtag")
-                    
-                    # If it meets duration requirement and doesn't have shorts hashtag, use this video
-                    if not has_shorts_hashtag:
-                        logger.info(f"Found eligible video: '{video_data['title']}' with duration {duration_seconds}s")
-                        break
+                if video_details_response['items']:
+                    video_to_return = (video_data_item['snippet'], video_details_response['items'][0])
             else:
-                # If we've gone through all items and none meet criteria, return None
-                logger.warning(f"No video found with duration >= {duration_min} seconds after checking {videos_checked} videos")
+                videos_checked = 0
+                for item in playlist_response['items']:
+                    videos_checked += 1
+                    video_data_snippet = item['snippet']
+                    video_id = video_data_snippet['resourceId']['videoId']
+                    
+                    logger.info(f"Checking video ID: {video_id}, Title: {video_data_snippet['title']}")
+                    
+                    video_details_response = youtube.videos().list(
+                        part='contentDetails,statistics,snippet',
+                        id=video_id
+                    ).execute()
+                    
+                    if not video_details_response['items']:
+                        logger.warning(f"Could not retrieve details for video ID: {video_id}")
+                        continue
+                    
+                    video_details_full = video_details_response['items'][0]
+                    duration_str = video_details_full['contentDetails']['duration']
+                    duration_seconds = 0
+                    
+                    time_parts = duration_str.replace('PT', '')
+                    if 'H' in time_parts:
+                        parts = time_parts.split('H')
+                        duration_seconds += int(parts[0]) * 3600
+                        time_parts = parts[1]
+                    if 'M' in time_parts:
+                        parts = time_parts.split('M')
+                        duration_seconds += int(parts[0]) * 60
+                        time_parts = parts[1]
+                    if 'S' in time_parts:
+                        duration_seconds += int(time_parts.replace('S', ''))
+                    
+                    logger.info(f"Video '{video_data_snippet['title']}' has duration: {duration_seconds}s (requirement: {duration_min_val}s)")
+                    
+                    if duration_seconds >= duration_min_val:
+                        title = video_details_full['snippet']['title'].lower()
+                        description = video_details_full['snippet']['description'].lower()
+                        has_shorts_hashtag = '#shorts' in title or '#shorts' in description or '#short' in title or '#short' in description
+                        
+                        if has_shorts_hashtag:
+                            logger.info(f"Video '{video_data_snippet['title']}' has required duration but contains #shorts hashtag, skipping.")
+                        else:
+                            logger.info(f"Found eligible video: '{video_data_snippet['title']}' with duration {duration_seconds}s")
+                            video_to_return = (video_data_snippet, video_details_full)
+                            break 
+                else:
+                    logger.warning(f"No video found with duration >= {duration_min_val} seconds after checking {videos_checked} videos")
+                    return None
+            
+            if not video_to_return:
+                logger.warning("Could not select a video to return.")
                 return None
-        
-        # Combine video data and statistics
-        metadata = {
-            'title': video_data['title'],
-            'description': video_data['description'],
-            'published_at': datetime.strptime(video_data['publishedAt'], '%Y-%m-%dT%H:%M:%SZ').isoformat(),
-            'video_id': video_id,
-            'url': f'https://www.youtube.com/watch?v={video_id}',
-            'thumbnail_url': video_data['thumbnails']['default']['url'],
-            'duration': video_details['items'][0]['contentDetails']['duration'],
-            'stats': {
-                'view_count': video_details['items'][0]['statistics'].get('viewCount', 'N/A'),
-                'like_count': video_details['items'][0]['statistics'].get('likeCount', 'N/A'),
-                'comment_count': video_details['items'][0]['statistics'].get('commentCount', 'N/A'),
-            }
-        }
-        
-        logger.info(f"Successfully retrieved metadata for video: {video_id}")
-        return metadata
-        
-    except Exception as e:
-        logger.error(f"An error occurred while fetching video metadata: {str(e)}")
-        return None
 
-def main():
-    """Example demonstrating the two-phase YouTube content retrieval approach."""
-    # Load API key from environment
-    load_dotenv()
-    API_KEY = os.getenv('YOUTUBE_API_KEY')
-    
-    # Example YouTube channel
-    channel_name = "@entreprenuership_opportunities"
-    
-    print(f"Demonstrating two-phase approach for YouTube channel: {channel_name}")
-    
-    # PHASE 1: Check for updates
-    print("\n=== Phase 1: Check for updates ===")
-    print("In this phase, we check for new videos and cache complete data.")
-    latest = check_latest_updates(channel_name, API_KEY, duration_min=300)
-    
-    if not latest:
-        print("No suitable videos found")
-        return
-        
-    print(f"Found latest video: {latest['title']}")
-    print(f"Published: {latest['published_at']}")
-    print(f"URL: {latest['url']}")
-    
-    # PHASE 2: Get full content from cache
-    print("\n=== Phase 2: Get content from cache ===")
-    print("In this phase, we retrieve the full content from cache without re-fetching.")
+            video_data_snippet, video_details_full = video_to_return
+            video_id = video_data_snippet['resourceId']['videoId']
+
+            metadata = {
+                'title': video_data_snippet['title'],
+                'description': video_data_snippet['description'],
+                'published_at': datetime.strptime(video_data_snippet['publishedAt'], '%Y-%m-%dT%H:%M:%SZ').isoformat(),
+                'video_id': video_id,
+                'url': f'https://www.youtube.com/watch?v={video_id}',
+                'thumbnail_url': video_data_snippet['thumbnails']['default']['url'],
+                'duration': video_details_full['contentDetails']['duration'],
+                'stats': {
+                    'view_count': video_details_full['statistics'].get('viewCount', 'N/A'),
+                    'like_count': video_details_full['statistics'].get('likeCount', 'N/A'),
+                    'comment_count': video_details_full['statistics'].get('commentCount', 'N/A'),
+                }
+            }
+            
+            logger.info(f"Successfully retrieved metadata for video: {video_id}")
+            return metadata
+            
+        except Exception as e:
+            logger.error(f"An error occurred while fetching video metadata: {str(e)}", exc_info=True)
+            return None
+
+async def main():
+    channel = "@entreprenuership_opportunities"
+    duration_min_val = 300
+
     try:
-        full_content = get_latest_update_details(channel_name)
-        print(f"Retrieved from cache: {full_content['title']}")
-        print(f"Duration: {full_content.get('duration', 'N/A')}")
-        print(f"URL: {full_content['url']}")
-        print(f"View Count: {full_content['stats'].get('view_count', 'N/A')}")
-        print(f"Comment Count: {full_content['stats'].get('comment_count', 'N/A')}")
+        connector = YoutubeConnector(channel, duration_min_val) # API_KEY is no longer passed
     except ValueError as e:
-        print(f"Error retrieving from cache: {e}")
+        logger.error(f"Failed to initialize YoutubeConnector: {e}")
+        return
+
+    logger.info(f"Demonstrating two-phase approach for YouTube channel: {channel}")
+    
+    logger.info("\n=== Phase 1: Check for updates (caches data) ===")
+    await connector.check_latest_updates() # Call it, no return value to store
+    
+    # Optional: Add a small delay or a log message indicating cache *should* be populated.
+    logger.info("Cache should now be populated if updates were found.")
+
+    logger.info("\n=== Phase 2: Get content from cache/details ===")
+    full_content = await connector.get_latest_update_details() # No argument passed
+    
+    if full_content:
+        logger.info(f"Retrieved details: {full_content.get('title')}")
+        logger.info(f"Duration: {full_content.get('duration', 'N/A')}")
+        logger.info(f"URL: {full_content.get('url')}")
+        logger.info(f"View Count: {full_content.get('stats', {}).get('view_count', 'N/A')}")
+        logger.info(f"Comment Count: {full_content.get('stats', {}).get('comment_count', 'N/A')}")
+    else:
+        logger.error(f"Error retrieving full content details for channel: {channel_placeholder}. Was cache populated?")
 
 if __name__ == "__main__":
-    main()
+    asyncio.run(main())

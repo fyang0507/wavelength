@@ -14,9 +14,9 @@ import tomllib
 from pathlib import Path
 from services.llm import api_text_completion
 from urllib.parse import urlparse, urljoin
-from connectors.website.scrapers import get_scraper
-from connectors.website.parsers.base import BaseParser
-from connectors.website.parsers import get_parser
+from connectors.sources.website.scrapers import get_scraper
+from connectors.sources.website.parsers.base import BaseParser
+from connectors.sources.website.parsers import get_parser
 from typing import Optional, Dict, Any
 from utils.url_utils import extract_base_url
 
