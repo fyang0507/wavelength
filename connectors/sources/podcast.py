@@ -10,23 +10,27 @@ The connector uses the Apple Podcasts API for searching and RSS feeds for conten
 Ref: https://developer.apple.com/library/archive/documentation/AudioVideo/Conceptual/iTuneSearchAPI/index.html
 """
 import requests
-import xml.etree.ElementTree as ET
 from utils.logging_config import logger
 from utils.connector_cache import ConnectorCache
-from datetime import datetime
-import email.utils
 from typing import Optional, Dict, Any
 import asyncio
 from connectors.sources.base_source import SourceConnector
+import json
+import re
+from services.llm import api_text_completion
+from utils.toml_loader import load_toml_file
+import os
 
 class PodcastConnector(SourceConnector):
     """
     Connector for fetching content from podcast channels.
     """
-    def __init__(self, podcast_name: str):
+    def __init__(self, podcast_name: str, debug: bool = False):
         super().__init__(source_identifier=podcast_name)
         self.podcast_name = podcast_name
         self.cache = ConnectorCache()
+        self.debug = debug
+
 
     def _get_podcast_feed_url(self) -> Optional[str]:
         """
@@ -58,80 +62,144 @@ class PodcastConnector(SourceConnector):
             logger.error(f"Error parsing iTunes API response for {self.podcast_name}: {e}")
             return None 
 
-    def _process_podcast_feed(self, feed_url: str) -> Optional[Dict[str, Any]]:
+
+    def extract_first_item(self, xml_text: str) -> str:
         """
-        Process a podcast RSS feed and extract the latest episode details.
+        Extract only the channel metadata and first <item> element from a podcast RSS feed,
+        preserving namespace declarations.
+        
+        Args:
+            xml_text: Complete XML text
+            
+        Returns:
+            Trimmed XML with only the first item, preserving namespaces
         """
         try:
-            response = requests.get(feed_url)
+            # Extract the XML declaration if present
+            xml_declaration = ""
+            xml_decl_match = re.match(r'<\?xml.*?\?>', xml_text, re.DOTALL)
+            if xml_decl_match:
+                xml_declaration = xml_decl_match.group(0)
+            
+            # Extract the root element opening tag with all namespace declarations
+            root_tag_match = re.search(r'<rss[^>]*>', xml_text, re.DOTALL)
+            if not root_tag_match:
+                logger.error("Could not find rss root tag")
+                return xml_text[:10000]  # Fallback to simple truncation
+                
+            root_opening_tag = root_tag_match.group(0)
+            
+            # Find the channel element and its content
+            channel_pattern = r'<channel>(.*?)<item>(.*?)</item>'
+            channel_match = re.search(channel_pattern, xml_text, re.DOTALL)
+            
+            if not channel_match:
+                logger.error("Could not find channel or first item")
+                return xml_text[:10000]  # Fallback to simple truncation
+                
+            channel_content = channel_match.group(1)
+            first_item = channel_match.group(2)
+            
+            # Assemble the trimmed XML with all necessary parts
+            trimmed_xml = (
+                f"{xml_declaration}\n"
+                f"{root_opening_tag}\n"
+                f"<channel>{channel_content}"
+                f"<item>{first_item}</item>\n"
+                f"</channel>\n"
+                f"</rss>"
+            )
+            
+            return trimmed_xml
+        
+        except Exception as e:
+            logger.error(f"Error in improved_extract_first_item: {e}")
+            # Fallback to returning a limited portion
+            return xml_text[:10000]
+
+    async def _process_podcast_feed_llm(self, feed_url: str) -> Optional[Dict[str, Any]]:
+        """
+        Process a podcast RSS feed using an LLM to extract episode details.
+        """
+        try:
+            response = await asyncio.to_thread(requests.get, feed_url, timeout=20)
             response.raise_for_status()
-            root = ET.fromstring(response.content)
-            channel = root.find('channel')
-            if channel is None:
-                logger.warning(f"No channel found in RSS feed: {feed_url}")
+            xml_content_original = response.text
+
+            if self.debug:
+                original_file_path = os.path.join("data", f"{self.podcast_name}_original.xml")
+                with open(original_file_path, "w", encoding="utf-8") as f:
+                    f.write(xml_content_original)
+                logger.debug(f"Saved original XML to {original_file_path}")
+
+            # Extract only the channel metadata and first <item> element
+            xml_content_trimmed = self.extract_first_item(xml_content_original)
+
+            if self.debug:
+                trimmed_file_path = os.path.join("data", f"{self.podcast_name}_trimmed.xml")
+                with open(trimmed_file_path, "w", encoding="utf-8") as f:
+                    f.write(xml_content_trimmed)
+                logger.debug(f"Saved trimmed XML to {trimmed_file_path}")
+
+            # Load prompt and model from preprocess.toml
+            # Assuming TomlLoader().load() returns a dict-like object or can access nested keys
+            try:
+                prompts_config = load_toml_file("prompts/preprocess.toml")
+                system_prompt = prompts_config["podcast_extraction"]["system"]
+                model_name = prompts_config["podcast_extraction"]["model"]
+            except (FileNotFoundError, KeyError, TypeError) as e:
+                logger.error(f"Failed to load podcast_extraction prompt/model from preprocess.toml: {e}")
                 return None
-            latest_item = channel.find('item')
-            if latest_item is None:
-                logger.warning(f"No episodes found in podcast feed: {self.podcast_name}")
+            
+            logger.debug(f"Sending XML content from {feed_url} to LLM (model: {model_name}) for podcast: {self.podcast_name}")
+            
+            # Run the synchronous api_text_completion function in a separate thread
+            raw_llm_response = await asyncio.to_thread(
+                api_text_completion,
+                model_name,
+                system_prompt,
+                xml_content_trimmed # User message is the XML content
+            )
+
+            if not raw_llm_response:
+                logger.error(f"LLM returned an empty response for {self.podcast_name} from {feed_url}")
                 return None
 
-            data = {}
-            # Try to find specific iTunes tags first
-            for child in latest_item:
-                tag_name = child.tag.split('}')[-1] if '}' in child.tag else child.tag
-                if tag_name == 'title':
-                    data['title'] = child.text
-                elif tag_name == 'pubDate':
-                    data['published_at_raw'] = child.text
-                elif tag_name == 'duration' and 'itunes' in child.tag.lower():
-                    data['duration'] = child.text
-                elif tag_name == 'summary' and 'itunes' in child.tag.lower():
-                    data['summary'] = child.text
-                elif tag_name == 'description': # generic description
-                    data['description_generic'] = child.text
-                elif tag_name == 'episode' and 'itunes' in child.tag.lower() and 'episodetype' not in child.tag.lower():
-                    data['episode_number'] = child.text
-                elif tag_name == 'guid':
-                    data['episode_id'] = child.text
-                elif child.tag.endswith('link') and not data.get('url'): #Prefer specific link from enclosure if available
-                     data['url'] = child.text
+            try:
+                extracted_data = json.loads(raw_llm_response)
+            except json.JSONDecodeError as e:
+                logger.error(f"Failed to parse JSON response from LLM for {self.podcast_name}: {e}. Response: {raw_llm_response}")
+                return None
 
-            # Enclosure for media URL
-            enclosure_tag = latest_item.find('enclosure')
-            if enclosure_tag is not None and 'url' in enclosure_tag.attrib:
-                data['url'] = enclosure_tag.attrib['url'] 
-            elif latest_item.find('link') is not None and not data.get('url') : # Fallback to item link if no enclosure
-                data['url'] = latest_item.find('link').text
+            if not isinstance(extracted_data, dict):
+                logger.error(f"LLM response for {self.podcast_name} is not a JSON object: {extracted_data}")
+                return None
 
-            # Fallbacks and formatting
-            if 'summary' not in data and 'description_generic' in data:
-                data['summary'] = data['description_generic']
+            logger.success(f"Successfully extracted podcast data using LLM for {self.podcast_name}")
+
+            episode_id_from_llm = extracted_data.get("episode_id")
+            media_url_from_llm = extracted_data.get("media_url")
             
-            published_at_iso = datetime.now().date().isoformat()
-            if data.get('published_at_raw'):
-                try:
-                    dt = email.utils.parsedate_to_datetime(data['published_at_raw'])
-                    published_at_iso = dt.date().isoformat()
-                except Exception as e:
-                    logger.warning(f"Could not parse pubDate '{data['published_at_raw']}' for {self.podcast_name}: {e}")
-            
+            final_episode_id = episode_id_from_llm if episode_id_from_llm else media_url_from_llm
+
             return {
                 "type": "podcast",
                 "channel": self.podcast_name,
-                "title": data.get('title', "Unknown Episode"),
-                "published_at": published_at_iso,
-                "url": data.get('url'),
-                "episode_id": data.get('episode_id', data.get('url')), 
-                "duration": data.get('duration'),
-                "summary": data.get('summary'),
-                "description": data.get('description_generic', data.get('summary')),
-                "episode_number": data.get('episode_number')
+                "title": extracted_data.get("title", "Unknown Episode"),
+                "published_at": extracted_data.get("published_at"),
+                "url": media_url_from_llm,
+                "episode_id": final_episode_id,
+                "duration": extracted_data.get("duration"),
+                "summary": extracted_data.get("summary"),
+                "description": extracted_data.get("description"),
+                "episode_number": extracted_data.get("episode_number")
             }
+
         except requests.RequestException as e:
-            logger.error(f"Failed to fetch or process RSS feed for {self.podcast_name} from {feed_url}: {e}")
+            logger.error(f"Failed to fetch RSS feed for LLM processing for {self.podcast_name} from {feed_url}: {e}")
             return None
-        except ET.ParseError as e:
-            logger.error(f"Error parsing XML for {self.podcast_name} from {feed_url}: {e}")
+        except Exception as e:
+            logger.error(f"An unexpected error occurred in _process_podcast_feed_llm for {self.podcast_name}: {e}", exc_info=True)
             return None
 
     async def check_latest_updates(self) -> None:
@@ -144,7 +212,7 @@ class PodcastConnector(SourceConnector):
             feed_url = self._get_podcast_feed_url()
             if not feed_url:
                 return # Implicitly None
-            result = self._process_podcast_feed(feed_url)
+            result = await self._process_podcast_feed_llm(feed_url)
             if not result:
                 return # Implicitly None
             self.cache.save("podcast", cache_key, result) # Cache the full episode data
@@ -176,9 +244,10 @@ class PodcastConnector(SourceConnector):
 
 async def main():
     podcast_name = "一席"
-    connector = PodcastConnector(podcast_name)
+    # Instantiate with debug=True to test saving XML files
+    connector = PodcastConnector(podcast_name, debug=True)
 
-    logger.info(f"Demonstrating two-phase approach for podcast: {podcast_name}")
+    logger.info(f"Demonstrating two-phase approach for podcast: {podcast_name} (Debug Mode: {connector.debug})")
     
     logger.info("=== Phase 1: Check for updates (caches data) ===")
     await connector.check_latest_updates() # Call it, no return value
