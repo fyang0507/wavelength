@@ -25,14 +25,13 @@ From the latest episode item, extract the following information:
 1.  **title**: The title of the episode.
 2.  **published_at**: The publication date of the episode. Please format it as YYYY-MM-DD. If the original date is in a different format, convert it. If no date is found or it cannot be parsed, use null.
 3.  **duration**: The duration of the episode (e.g., "HH:MM:SS", "MM:SS", or total seconds as a string). If not available, use null.
-4.  **summary**: A concise summary of the episode provided in the XML file. Prioritize dedicated summary tags (e.g., from the itunes namespace). If not available, use null. Do not generate a summary if the summary tag is not available.
-5.  **description**: The main description of the episode. This can be more detailed than the summary. Recite precisely the content of the description tag. If no description is found, use null.
-6.  **media_url**: The direct URL to the episode's audio or video file. Prioritize 'enclosure' tags' 'url' attribute. If not found, look for other link tags that might point to the media. If none, use null.
-7.  **episode_number**: The episode number, if available (e.g., from an itunes:episode tag). If not available, use null.
+4.  **description**: The main description of the episode. Recite precisely the content of the description tag. If no description is found, use null.
+5.  **media_url**: The direct URL to the episode's audio or video file. Prioritize 'enclosure' tags' 'url' attribute. If not found, look for other link tags that might point to the media. If none, use null.
+6.  **episode_number**: The episode number, if available (e.g., from an itunes:episode tag). If not available, use null.
 
 The XML feed might use different tags or namespaces (e.g., 'itunes:', 'media:'). Be robust and try to find the information even if tags are not standard.
 
-Provide the output as a single JSON object with the following keys: "title", "published_at", "duration", "summary", "description", "media_url", "episode_number".
+Provide the output as a single JSON object with the following keys: "title", "published_at", "duration", "description", "media_url", "episode_number".
 If a piece of information cannot be found, its value in the JSON output for that key should be null.
 """
 podcast_extraction.model = "gpt-4.1-nano"
