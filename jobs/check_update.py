@@ -13,9 +13,6 @@ from connectors.sources.youtube import YoutubeConnector
 from connectors.sources.podcast import PodcastConnector
 from connectors.sources.bilibili import BilibiliConnector
 from connectors.sources.website.pipeline import WebsiteConnector
-import json
-from datetime import datetime
-import pathlib
 from utils.toml_loader import load_toml_file
 from utils.connector_cache import ConnectorCache
 import asyncio
@@ -23,7 +20,6 @@ import asyncio
 
 async def process_youtube_channels(youtube_channels):
     """Check for updates from YouTube channels and return results."""
-    results = []
     for channel_name in youtube_channels:
         logger.info(f"Checking for updates from YouTube channel: {channel_name}")
         try:
@@ -32,13 +28,10 @@ async def process_youtube_channels(youtube_channels):
             await youtube_connector.check_latest_updates() # Populates cache, returns None
         except Exception as e:
             logger.error(f"Error processing YouTube channel {channel_name}: {e}", exc_info=True)
-            
-    return results
 
 
 async def process_podcasts(podcast_names):
     """Check for updates from podcasts and return results."""
-    results = []
     for podcast_name in podcast_names:
         logger.info(f"Checking for updates from podcast: {podcast_name}")
         try:
@@ -46,16 +39,14 @@ async def process_podcasts(podcast_names):
             await podcast_connector.check_latest_updates() 
         except Exception as e:
             logger.error(f"Error processing Podcast {podcast_name}: {e}", exc_info=True)
-    return results
 
 
 async def process_bilibili(bilibili_users):
     """Check for updates from Bilibili users and return results."""
-    results = []
     
     if not bilibili_users:
         logger.info("No Bilibili users found in subscriptions.")
-        return results
+        return
             
     for user in bilibili_users:
         uid = user.get('uid')
@@ -68,13 +59,10 @@ async def process_bilibili(bilibili_users):
             logger.error(f"Error processing Bilibili user {name}: {e}", exc_info=True)
             
         await asyncio.sleep(2) # Keep the delay, but make it non-blocking
-            
-    return results
 
 
 async def process_websites(websites):
     """Check for updates from websites and return results."""
-    results = []
     for website_subscription in websites:
         channel = website_subscription.get('channel')
         source_url = website_subscription.get('source_url')
@@ -85,9 +73,7 @@ async def process_websites(websites):
             website_connector = WebsiteConnector(channel=channel, source_url=source_url) 
             await website_connector.check_latest_updates()
         except Exception as e:
-            logger.error(f"Error during website_check_updates for {channel} ({source_url}): {e}. Skipping.")
-            
-    return results
+            logger.error(f"Error during website_check_updates for {channel} ({source_url}): {e}. Skipping.")        
 
 
 async def main():
@@ -107,42 +93,13 @@ async def main():
         website_task = process_websites(subscriptions.get('website', []))
 
         logger.info("Starting concurrent update checks...")
-        results_from_all_sources = await asyncio.gather(
+        await asyncio.gather(
             youtube_task,
             podcast_task,
             bilibili_task,
             website_task
         )
         logger.info("Concurrent update checks completed.")
-
-        # Unpack results
-        youtube_results, podcast_results, bilibili_results, website_results = results_from_all_sources
-        
-        all_update_results = youtube_results + podcast_results + bilibili_results + website_results
-
-        for result in all_update_results:
-            for key, value in result.items():
-                if isinstance(value, datetime):
-                    result[key] = value.isoformat()
-
-        if not all_update_results:
-            logger.warning("No updates found from any source.")
-            return
-
-        data_dir = pathlib.Path("data")
-        data_dir.mkdir(exist_ok=True)
-        current_date_str = datetime.now().strftime("%Y-%m-%d")
-        results_file = data_dir / f"check_update_{current_date_str}.json"
-
-        logger.info(f"Saving update check results to: {results_file}")
-        try:
-            with open(results_file, 'w', encoding='utf-8') as f:
-                json.dump(all_update_results, f, indent=2, ensure_ascii=False)
-            logger.info(f"Successfully saved update check results from {len(all_update_results)} sources.")
-        except IOError as e:
-            logger.error(f"Error saving update check results to {results_file}: {e}")
-        except TypeError as e:
-             logger.error(f"Error serializing data to JSON: {e}")
 
     except Exception as e:
         logger.error(f"An error occurred during update checking: {str(e)}", exc_info=True)
