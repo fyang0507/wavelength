@@ -18,7 +18,8 @@ podcast = [
     "Lenny's Podcast: Product | Growth | Career",
     "Lightcone Podcast",
     "一席",
-    "起朱楼宴宾客"
+    "起朱楼宴宾客",
+    "张小珺Jùn｜商业访谈录",
 ]
 
 newsletter = [
@@ -40,6 +41,10 @@ source_url = "https://36kr.com/user/5060931"
 [[website]]
 channel = "有数DataVision (36氪)"
 source_url = "https://36kr.com/user/5294205"
+
+[[website]]
+channel = "阑夕（36氪）"
+source_url = "https://36kr.com/user/1883914730"
 
 [[bilibili]]
 uid = 946974
