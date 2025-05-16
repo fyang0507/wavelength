@@ -109,7 +109,7 @@ class PodcastConnector(SourceConnector):
                 f"</channel>\n"
                 f"</rss>"
             )
-            
+            logger.success("Successfully trimmed podcast feed to first item")
             return trimmed_xml
         
         except Exception as e:
@@ -122,7 +122,10 @@ class PodcastConnector(SourceConnector):
         Process a podcast RSS feed using an LLM to extract episode details.
         """
         try:
-            response = await asyncio.to_thread(requests.get, feed_url, timeout=20)
+            headers = {
+                "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36"
+            }
+            response = await asyncio.to_thread(requests.get, feed_url, timeout=20, headers=headers)
             response.raise_for_status()
             xml_content_original = response.text
 
@@ -243,7 +246,7 @@ class PodcastConnector(SourceConnector):
             return None
 
 async def main():
-    podcast_name = "一席"
+    podcast_name = "Lenny's Podcast: Product | Growth | Career"
     # Instantiate with debug=True to test saving XML files
     connector = PodcastConnector(podcast_name, debug=True)
 
