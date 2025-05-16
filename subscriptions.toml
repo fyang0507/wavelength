@@ -6,7 +6,7 @@ youtube = [
     "@MeiTouJun",
     "@TheMarketMemo",
     "@WhiteboardCrypto",
-    "@entreprenuership_opportunities",
+    "@eo_offical", # I think it's a typo, anyway
 ]
 
 podcast = [
