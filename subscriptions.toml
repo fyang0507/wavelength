@@ -11,11 +11,10 @@ youtube = [
 
 podcast = [
     "a16z Podcast",
-    "NVIDIA Podcast",
     "Decoder with Nilay Patel",
     "Greymatter",
     "Training Data Sequoia Capital",
-    "Lenny's Podcast: Product | Growth | Career",
+    "Lenny's Podcast: Product | Growth | Career", # ip-level blocked by Substack
     "Lightcone Podcast",
     "一席",
     "起朱楼宴宾客",
