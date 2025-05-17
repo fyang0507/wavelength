@@ -12,7 +12,8 @@ by their mid (member ID). Videos are sorted by publication date (newest first).
 This implementation uses curl to fetch the data. Standard implementation to fetch the data is likely to encounter rate limit, risk of being blocked, etc.
 
 Ref: https://github.com/SocialSisterYi/bilibili-API-collect/blob/master/docs/video/collection.md#%E6%A0%B9%E6%8D%AE%E5%85%B3%E9%94%AE%E8%AF%8D%E6%9F%A5%E6%89%BE%E8%A7%86%E9%A2%91
-Note: There is no description for the video using this API. To get the description, another API is needed. See: https://github.com/SocialSisterYi/bilibili-API-collect/blob/master/docs/video/info.md#%E8%A7%86%E9%A2%91%E5%9F%BA%E6%9C%AC%E4%BF%A1%E6%81%AF
+TODO: There is no description for the video using this API. To get the description, another API is needed. See: https://github.com/SocialSisterYi/bilibili-API-collect/blob/master/docs/video/info.md#%E8%A7%86%E9%A2%91%E5%9F%BA%E6%9C%AC%E4%BF%A1%E6%81%AF
+TODO: 现方法也无法知道最新视频是否是会员视频，需要另一个API
 """
 
 from datetime import datetime
@@ -45,7 +46,7 @@ class BilibiliConnector(SourceConnector):
         cache_key = self._generate_cache_key()
         
         try:
-            response = self._get_user_videos(self.uid, page_size=1)
+            response = self._get_user_videos(page_size=1)
             
             if response.get("code") != 0:
                 logger.error(f"Error fetching videos for Bilibili user '{self.channel}': {response.get('message', 'Unknown error')}")
@@ -90,14 +91,14 @@ class BilibiliConnector(SourceConnector):
             logger.warning(f"No cached data found for Bilibili channel {self.channel} (cache key: {cache_key}). Run check_latest_updates first.")
             return None
 
-    def _get_user_videos(self, mid: int, page_size: int = 5, page_num: int = 1) -> Dict[str, Any]:
+    def _get_user_videos(self, page_size: int = 5, page_num: int = 1) -> Dict[str, Any]:
         """
         Fetch videos for a specific Bilibili user using curl.
         """
         url = "https://api.bilibili.com/x/series/recArchivesByKeywords"
         curl_cmd = [
             "curl", "-s", "-G", url,
-            "--data-urlencode", f"mid={mid}",
+            "--data-urlencode", f"mid={self.uid}",
             "--data-urlencode", "keywords=",
             "--data-urlencode", f"ps={page_size}",
             "--data-urlencode", f"pn={page_num}",
