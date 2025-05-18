@@ -1,7 +1,7 @@
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="./static/logo-dark.png">
   <source media="(prefers-color-scheme: light)" srcset="./static/logo-light.png">
-  <img alt="Shows a black Browser Use Logo in light color mode and a white one in dark color mode." src="./static/logo-light.png"  width="full">
+  <img alt="Wavelength: Deep Focus On The Content That Matters" src="./static/logo-light.png"  width="full">
 </picture>
 
 <h1 align="left">Wavelength: Deep Focus On The Content That Matters</h1>
