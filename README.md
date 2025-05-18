@@ -1,9 +1,3 @@
-<picture>
-  <source media="(prefers-color-scheme: dark)" srcset="./static/logo-dark.png">
-  <source media="(prefers-color-scheme: light)" srcset="./static/logo-light.png">
-  <img alt="Wavelength: Deep Focus On The Content That Matters." src="./static/logo-light.png"  width="full">
-</picture>
-
 # Wavelength: Deep Focus On The Content That Matters
 
 Tired of jumping between apps to track subscribed creators only to discover irrelevant content? Stop the endless scroll! Wavelength gathers your favorite subscriptions in one place, filtering out the noise using AI and serving up only the content that matches your wavelength.
