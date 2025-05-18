@@ -104,10 +104,6 @@ def filter_new_entries(latest_retrieval, current_entries):
                 'channel': channel,
                 'published_at': published_at
             })
-            logger.info("--------------------------------")
-            logger.info(item)
-            logger.info(current_entries)
-            logger.info("--------------------------------")
             logger.info(f"Adding {channel} on {published_at}")
         else:
             logger.info(f"Skipping {channel} on {published_at} because it already exists")
