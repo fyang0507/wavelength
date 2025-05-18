@@ -1,16 +1,5 @@
-<!-- README.md -->
-<picture>
-  <!-- Dark mode -->
-  <source 
-    srcset="./assets/logo-dark.png" 
-    media="(prefers-color-scheme: dark)" />
-
-  <!-- Light mode + fallback -->
-  <img 
-    src="./assets/logo-light.png" 
-    alt="Wavelength — Deep Focus On The Content That Matters"
-    width="100%">
-</picture>
+![dark-logo](./assets/logo-dark.png#gh-dark-mode-only)
+![light-logo](./assets/logo-light.png#gh-light-mode-only)
 
 # Wavelength: Deep Focus On The Content That Matters
 
