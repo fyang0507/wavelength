@@ -12,7 +12,7 @@
   <!-- Made with Python -->
   <img src="https://img.shields.io/badge/Made%20with-%F0%9F%8C%88%20Python-blue?logo=python" alt="Made with Python" />
   <!-- License -->
-  <img src="https://img.shields.io/github/license/fyang0507/wavelength" alt="License" />
+  <img src="https://img.shields.io/github/license/fyang0507/wavelength?color=green" alt="License" />
 </p>
 
 <h1 align="left">Wavelength: Deep Focus On The Content That Matters</h1>
