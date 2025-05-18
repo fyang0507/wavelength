@@ -1,3 +1,12 @@
+<picture>
+  <!-- Dark mode first -->
+  <source media="(prefers-color-scheme: dark)" srcset="assets/logo-dark.png" />
+  <!-- Light mode fallback -->
+  <source media="(prefers-color-scheme: light)" srcset="assets/logo-light.png" />
+  <!-- Fallback for very old browsers -->
+  <img src="assets/logo-light.png" alt="Wavelength — Deep Focus On The Content That Matters" width="100%">
+</picture>
+
 # Wavelength: Deep Focus On The Content That Matters
 
 Tired of jumping between apps to track subscribed creators only to discover irrelevant content? Stop the endless scroll! Wavelength gathers your favorite subscriptions in one place, filtering out the noise using AI and serving up only the content that matches your wavelength.
