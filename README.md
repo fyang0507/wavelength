@@ -4,7 +4,21 @@
   <img alt="Wavelength: Deep Focus On The Content That Matters" src="./assets/logo-light.png"  width="full">
 </picture>
 
+
+<!-- Wavelength – centered badges -->
+<p align="center">
+ <!-- CI Status -->
+  <img src="https://img.shields.io/github/actions/workflow/status/fyang0507/wavelength/daily-processing.yaml" alt="CI status" />
+  <!-- Made with Python -->
+  <img src="https://img.shields.io/badge/Made%20with-%F0%9F%8C%88%20Python-blue?logo=python" alt="Made with Python" />
+  <!-- License -->
+  <img src="https://img.shields.io/github/license/fyang0507/wavelength" alt="License" />
+</p>
+
 <h1 align="left">Wavelength: Deep Focus On The Content That Matters</h1>
+
+<!-- Badges -->
+
 
 Tired of jumping between apps to track subscribed creators only to discover irrelevant content? Stop the endless scroll! Wavelength gathers your favorite subscriptions in one place, filtering out the noise using AI and serving up only the content that matches your wavelength.
 
@@ -70,9 +84,8 @@ While Apple Podcast coverage is arguably comprehensive, I noticed a third-party 
 Notably, all Substack-related services have implemented IP-level blocking, and current workflows in GitHub Actions are blocked from accessing them.
 
 ## Future Works
-- Add a logo
 - Add llm generated reason to daily digest
-- Test agent-based solutions like playwright-mcp for easier website access
+- Test agent-based solutions like playwright-mcp for easier website access / crawl4ai may also be another simpler solution
 - Test Gemini's YouTube video understanding feature
 - Add new website trackers for: a16z, Sequoia, Substack, etc.
 - Add rate limiting for each connector
