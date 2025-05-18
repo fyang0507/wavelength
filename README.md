@@ -1,5 +1,5 @@
-![dark-logo](./assets/logo-dark.png#gh-dark-mode-only)
-![light-logo](./assets/logo-light.png#gh-light-mode-only)
+![dark-logo](assets/logo-dark.png#gh-dark-mode-only)
+![light-logo](assets/logo-light.png#gh-light-mode-only)
 
 # Wavelength: Deep Focus On The Content That Matters
 
