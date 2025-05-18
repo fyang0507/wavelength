@@ -1,10 +1,10 @@
 <picture>
   <!-- Dark mode first -->
-  <source media="(prefers-color-scheme: dark)" srcset="assets/logo-dark.png" />
+  <source media="(prefers-color-scheme: dark)" srcset="./assets/logo-dark.png" />
   <!-- Light mode fallback -->
-  <source media="(prefers-color-scheme: light)" srcset="assets/logo-light.png" />
+  <source media="(prefers-color-scheme: light)" srcset="./assets/logo-light.png" />
   <!-- Fallback for very old browsers -->
-  <img src="assets/logo-light.png" alt="Wavelength — Deep Focus On The Content That Matters" width="100%">
+  <img src="./assets/logo-light.png" alt="Wavelength — Deep Focus On The Content That Matters" width="100%">
 </picture>
 
 # Wavelength: Deep Focus On The Content That Matters
