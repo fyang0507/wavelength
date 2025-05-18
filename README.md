@@ -1,5 +1,8 @@
-![dark-logo](assets/logo-dark.png#gh-dark-mode-only)
-![light-logo](assets/logo-light.png#gh-light-mode-only)
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="./static/logo-dark.png">
+  <source media="(prefers-color-scheme: light)" srcset="./static/logo-light.png">
+  <img alt="Wavelength: Deep Focus On The Content That Matters." src="./static/logo-light.png"  width="full">
+</picture>
 
 # Wavelength: Deep Focus On The Content That Matters
 
