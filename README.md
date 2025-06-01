@@ -40,6 +40,7 @@ In Wavelength, I made a conscious choice not to build tldr-over-tldr (name inspi
 * Generate Daily Digest in Notion
 
 ## Demo of the daily digests
+![wavelength-preview](./assets/wavelength-preview.png)
 
 ## Supported Platforms
 
